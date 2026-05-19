@@ -8,6 +8,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { SupabaseClient } from '@supabase/supabase-js';
+import sgMail from '@sendgrid/mail';
 import { SUPABASE_ADMIN, SUPABASE_CLIENT } from '../supabase/supabase.module';
 import { ConfigService } from '@nestjs/config';
 import { LoginDto } from './dto/login.dto';
@@ -83,13 +84,58 @@ export class AuthService {
   }
 
   async sendResetPasswordEmail({ email }: ResetPasswordDto): Promise<{ success: true }> {
-    const publicAppUrl = this.config.get<string>('PUBLIC_APP_URL') ?? 'http://localhost:3000';
-    const { error } = await this.supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${publicAppUrl}/reset-password`,
-    });
-    // Intentionally don't surface whether the email exists — prevents enumeration attacks.
-    if (error) {
-      console.error('[auth.resetPasswordForEmail]', email, error.message);
+    // Intentionally don't surface whether the email exists or whether SendGrid failed —
+    // prevents enumeration attacks. Always return success; log failures server-side.
+    try {
+      const publicAppUrl = this.config.get<string>('PUBLIC_APP_URL') ?? 'http://localhost:3000';
+      const { data, error } = await this.admin.auth.admin.generateLink({
+        type: 'recovery',
+        email,
+        options: { redirectTo: `${publicAppUrl}/reset-password` },
+      });
+
+      if (error || !data?.properties?.action_link) {
+        console.error('[auth.generateLink]', email, error?.message ?? 'no action_link');
+        return { success: true };
+      }
+
+      const apiKey = this.config.get<string>('SENDGRID_API_KEY');
+      const fromEmail = this.config.get<string>('SENDGRID_FROM_EMAIL');
+      const fromName = this.config.get<string>('SENDGRID_FROM_NAME');
+      const templateId = this.config.get<string>('SENDGRID_RESET_PASSWORD_TEMPLATE_ID');
+
+      console.log('[sendgrid.debug] env:', {
+        apiKeyPrefix: apiKey?.slice(0, 7),
+        apiKeyLength: apiKey?.length,
+        fromEmail,
+        fromName,
+        templateId,
+        actionLinkPreview: data.properties.action_link.slice(0, 60) + '...',
+      });
+
+      if (!apiKey || !fromEmail || !templateId) {
+        console.error('[sendgrid.debug] missing env var(s)');
+        return { success: true };
+      }
+
+      sgMail.setApiKey(apiKey);
+      const [response] = await sgMail.send({
+        to: email,
+        from: { email: fromEmail, name: fromName ?? 'Playtime' },
+        templateId,
+        dynamicTemplateData: { resetPasswordLink: data.properties.action_link },
+      });
+      console.log('[sendgrid.debug] success:', {
+        statusCode: response.statusCode,
+        messageId: response.headers['x-message-id'],
+      });
+    } catch (err) {
+      const e = err as { code?: number; message?: string; response?: { body?: unknown; headers?: unknown } };
+      console.error('[auth.sendResetPasswordEmail]', email, {
+        message: e.message,
+        code: e.code,
+        responseBody: e.response?.body,
+      });
     }
     return { success: true };
   }

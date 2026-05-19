@@ -34,7 +34,7 @@ export const clearDefaults: Record<string, string[]> = {
 };
 
 export const skippedColumns: Record<string, string[]> = {
-  user_01: ['password'],
+  user_01: ['password', 'magic_link'],
 };
 
 export function isSkipped(table: string, column: string): boolean {
