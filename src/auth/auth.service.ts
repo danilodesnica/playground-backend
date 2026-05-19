@@ -87,7 +87,7 @@ export class AuthService {
     // Intentionally don't surface whether the email exists or whether SendGrid failed —
     // prevents enumeration attacks. Always return success; log failures server-side.
     try {
-      const publicAppUrl = this.config.get<string>('PUBLIC_APP_URL') ?? 'http://localhost:3000';
+      const publicAppUrl = this.config.get<string>('PUBLIC_APP_URL') ?? 'https://playground-backend-o39o.onrender.com';
       const { data, error } = await this.admin.auth.admin.generateLink({
         type: 'recovery',
         email,
