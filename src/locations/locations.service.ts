@@ -1,5 +1,6 @@
 import { Inject, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
 import { SupabaseClient } from '@supabase/supabase-js';
+import { InteractionsService } from '../interactions/interactions.service';
 import { SUPABASE_ADMIN } from '../supabase/supabase.module';
 
 export interface LocationDto {
@@ -66,6 +67,22 @@ const CATEGORY_MAP: Record<string, keyof FeaturedLocations> = {
   Activities: 'activities',
 };
 
+function groupFeatured(rows: any[] | null): FeaturedLocations {
+  const result: FeaturedLocations = {
+    upcomingEvents: [],
+    popularPlaygrounds: [],
+    newPlaygrounds: [],
+    newEvents: [],
+    activities: [],
+  };
+  for (const row of rows ?? []) {
+    const key = CATEGORY_MAP[row.category];
+    if (!key) continue;
+    result[key].push(toLocationDto(row));
+  }
+  return result;
+}
+
 function toMs(value: unknown): number | null {
   if (value === null || value === undefined) return null;
   if (typeof value === 'number') return value;
@@ -117,28 +134,29 @@ export function toLocationListItem(row: any): LocationListItem {
 
 @Injectable()
 export class LocationsService {
-  constructor(@Inject(SUPABASE_ADMIN) private readonly admin: SupabaseClient) { }
+  constructor(
+    @Inject(SUPABASE_ADMIN) private readonly admin: SupabaseClient,
+    private readonly interactions: InteractionsService,
+  ) { }
 
+  // Anonymous / public callers (e.g. /locations/free) — random selection per rail.
   async featured(): Promise<FeaturedLocations> {
     const { data, error } = await this.admin.rpc('get_featured_locations');
     if (error) {
       throw new InternalServerErrorException(`Failed to fetch featured locations: ${error.message}`);
     }
+    return groupFeatured(data);
+  }
 
-    const result: FeaturedLocations = {
-      upcomingEvents: [],
-      popularPlaygrounds: [],
-      newPlaygrounds: [],
-      newEvents: [],
-      activities: [],
-    };
-
-    for (const row of data ?? []) {
-      const key = CATEGORY_MAP[row.category];
-      if (!key) continue;
-      result[key].push(toLocationDto(row));
+  // Authenticated callers — same rails, but ranked by the user's category/tag/geo affinity.
+  // Cold-start users (no clicks, no favorites) collapse to ~average_rating + jitter, which
+  // matches today's random-per-rail UX.
+  async featuredForUser(userId: string): Promise<FeaturedLocations> {
+    const { data, error } = await this.admin.rpc('get_personalized_featured', { uid: userId });
+    if (error) {
+      throw new InternalServerErrorException(`Failed to fetch personalized featured: ${error.message}`);
     }
-    return result;
+    return groupFeatured(data);
   }
 
   async listByCategory(category: string, perPage: number, offset: number): Promise<LocationListResponse> {
@@ -264,7 +282,7 @@ export class LocationsService {
     return rows;
   }
 
-  async findById(id: string): Promise<LocationListItem> {
+  async findById(id: string, userId?: string): Promise<LocationListItem> {
     const { data, error } = await this.admin
       .from('location')
       .select(
@@ -279,6 +297,11 @@ export class LocationsService {
     if (!data) {
       throw new NotFoundException(`Location ${id} not found`);
     }
+
+    if (userId) {
+      this.interactions.track(userId, id, 'click');
+    }
+
     return toLocationListItem(data);
   }
 }

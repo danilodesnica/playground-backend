@@ -7,6 +7,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { SupabaseClient } from '@supabase/supabase-js';
+import { InteractionsService } from '../interactions/interactions.service';
 import { SUPABASE_ADMIN } from '../supabase/supabase.module';
 import { toLocationListItem } from '../locations/locations.service';
 import type { LocationListItem } from '../locations/locations.service';
@@ -51,7 +52,10 @@ function assertOwner(jwtUserId: string, bodyUserId: string): void {
 
 @Injectable()
 export class SavedLocationsService {
-  constructor(@Inject(SUPABASE_ADMIN) private readonly admin: SupabaseClient) { }
+  constructor(
+    @Inject(SUPABASE_ADMIN) private readonly admin: SupabaseClient,
+    private readonly interactions: InteractionsService,
+  ) { }
 
   async create(jwtUserId: string, body: SavedLocationBodyDto): Promise<SavedLocationRow> {
     assertOwner(jwtUserId, body.user_id);
@@ -68,6 +72,9 @@ export class SavedLocationsService {
       }
       throw new InternalServerErrorException(`Failed to save location: ${error.message}`);
     }
+
+    this.interactions.track(jwtUserId, body.location_id, 'favorite');
+
     return data as SavedLocationRow;
   }
 

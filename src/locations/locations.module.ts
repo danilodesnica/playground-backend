@@ -1,10 +1,11 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
+import { InteractionsModule } from '../interactions/interactions.module';
 import { LocationsController } from './locations.controller';
 import { LocationsService } from './locations.service';
 
 @Module({
-  imports: [AuthModule],
+  imports: [AuthModule, InteractionsModule],
   controllers: [LocationsController],
   providers: [LocationsService],
   exports: [LocationsService],

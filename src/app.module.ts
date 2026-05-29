@@ -5,6 +5,7 @@ import { ZodValidationPipe } from 'nestjs-zod';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
+import { InteractionsModule } from './interactions/interactions.module';
 import { LocationsModule } from './locations/locations.module';
 import { OffersModule } from './offers/offers.module';
 import { ReviewsModule } from './reviews/reviews.module';
@@ -18,6 +19,7 @@ import { UserModule } from './user/user.module';
     ConfigModule.forRoot({ isGlobal: true }),
     SupabaseModule,
     AuthModule,
+    InteractionsModule,
     LocationsModule,
     SavedLocationsModule,
     OffersModule,

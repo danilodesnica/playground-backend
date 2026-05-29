@@ -1,4 +1,6 @@
 import { Controller, Get, Param, ParseUUIDPipe, Query, UseGuards } from '@nestjs/common';
+import type { User } from '@supabase/supabase-js';
+import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { LocationAllQueryDto } from './dto/location-all-query.dto';
 import { LocationsFilterQueryDto } from './dto/locations-filter-query.dto';
@@ -17,11 +19,11 @@ export class LocationsController {
 
   @Get('featured')
   @UseGuards(JwtAuthGuard)
-  async featured(): Promise<FeaturedLocations> {
-    return this.locationsService.featured();
+  async featured(@CurrentUser() user: User): Promise<FeaturedLocations> {
+    return this.locationsService.featuredForUser(user.id);
   }
 
-  // Public — same payload as /locations/featured, no auth required.
+  // Public — anonymous random selection per rail. No auth, so no personalization.
   @Get('free')
   async free(): Promise<FeaturedLocations> {
     return this.locationsService.featured();
@@ -35,7 +37,10 @@ export class LocationsController {
 
   @Get(':id')
   @UseGuards(JwtAuthGuard)
-  async findOne(@Param('id', new ParseUUIDPipe()) id: string): Promise<LocationListItem> {
-    return this.locationsService.findById(id);
+  async findOne(
+    @CurrentUser() user: User,
+    @Param('id', new ParseUUIDPipe()) id: string,
+  ): Promise<LocationListItem> {
+    return this.locationsService.findById(id, user.id);
   }
 }
