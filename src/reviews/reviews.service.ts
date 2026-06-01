@@ -141,4 +141,43 @@ export class ReviewsService {
       user: row.user ? toReviewUser(row.user) : null,
     }));
   }
+
+  // Admin — every review (all statuses), newest first, with the author joined.
+  async listAllForAdmin(): Promise<ReviewWithUser[]> {
+    const { data, error } = await this.admin
+      .from('reviews')
+      .select(`
+        id, created_at, user_id, location_id, review, rating, status,
+        user:user_id (id, email, name, code, is_admin, created_at)
+      `)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      throw new InternalServerErrorException(`Failed to fetch reviews: ${error.message}`);
+    }
+
+    return (data ?? []).map((row: any) => ({
+      ...toReviewRow(row),
+      user: row.user ? toReviewUser(row.user) : null,
+    }));
+  }
+
+  // Admin — flip a review's moderation status.
+  async setStatus(id: string, status: 'approved' | 'rejected'): Promise<ReviewRow> {
+    const { data, error } = await this.admin
+      .from('reviews')
+      .update({ status })
+      .eq('id', id)
+      .select('id, created_at, user_id, location_id, review, rating, status')
+      .maybeSingle();
+
+    if (error) {
+      throw new InternalServerErrorException(`Failed to update review: ${error.message}`);
+    }
+    if (!data) {
+      throw new NotFoundException(`Review ${id} not found`);
+    }
+
+    return toReviewRow(data);
+  }
 }

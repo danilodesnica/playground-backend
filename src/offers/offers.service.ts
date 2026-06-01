@@ -6,6 +6,8 @@ import {
 } from '@nestjs/common';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_ADMIN } from '../supabase/supabase.module';
+import { CreateOfferDto } from './dto/create-offer.dto';
+import { UpdateOfferDto } from './dto/update-offer.dto';
 
 export interface OfferDto {
   id: number;
@@ -85,6 +87,65 @@ export class OffersService {
     if (!data) {
       throw new NotFoundException(`Offer ${id} not found`);
     }
+    return toOfferDto(data);
+  }
+
+  // Admin — create an offer. Images are pre-uploaded to Storage; the body carries their metadata.
+  async createOffer(input: CreateOfferDto): Promise<OfferDto> {
+    const row = {
+      name: input.name,
+      description: input.description,
+      category: input.category,
+      url: input.url,
+      image: input.image ?? null,
+      preview_img: input.previewImg ?? null,
+    };
+
+    const { data, error } = await this.admin
+      .from('offers')
+      .insert(row)
+      .select(OFFER_COLUMNS)
+      .single();
+
+    if (error) {
+      throw new InternalServerErrorException(`Failed to create offer: ${error.message}`);
+    }
+
+    return toOfferDto(data);
+  }
+
+  // Admin — partial update. Only the keys present in the body are written;
+  // an explicit null clears a nullable column (image / preview_img). id/created_at untouched.
+  async updateOffer(id: number, input: UpdateOfferDto): Promise<OfferDto> {
+    const COLUMN_MAP: Record<string, string> = {
+      previewImg: 'preview_img',
+    };
+
+    const patch: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(input)) {
+      if (value === undefined) continue; // omitted → leave unchanged
+      patch[COLUMN_MAP[key] ?? key] = value; // null kept intentionally (clear)
+    }
+
+    // Nothing to change — return the current row (404 if it doesn't exist).
+    if (Object.keys(patch).length === 0) {
+      return this.findById(id);
+    }
+
+    const { data, error } = await this.admin
+      .from('offers')
+      .update(patch)
+      .eq('id', id)
+      .select(OFFER_COLUMNS)
+      .maybeSingle();
+
+    if (error) {
+      throw new InternalServerErrorException(`Failed to update offer: ${error.message}`);
+    }
+    if (!data) {
+      throw new NotFoundException(`Offer ${id} not found`);
+    }
+
     return toOfferDto(data);
   }
 }

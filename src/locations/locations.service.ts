@@ -2,6 +2,11 @@ import { Inject, Injectable, InternalServerErrorException, NotFoundException } f
 import { SupabaseClient } from '@supabase/supabase-js';
 import { InteractionsService } from '../interactions/interactions.service';
 import { SUPABASE_ADMIN } from '../supabase/supabase.module';
+import { CreateLocationDto } from './dto/create-location.dto';
+import { UpdateLocationDto } from './dto/update-location.dto';
+
+const LOCATION_COLUMNS =
+  'id, created_at, latitude, longitude, name, end_date, category, url, description, tags, place_position, type, img_url, preview_img, reviews, average_rating';
 
 export interface LocationDto {
   id: string;
@@ -300,6 +305,89 @@ export class LocationsService {
 
     if (userId) {
       this.interactions.track(userId, id, 'click');
+    }
+
+    return toLocationListItem(data);
+  }
+
+  // Admin — full unfiltered list (includes expired events), newest first, no pagination.
+  async listAllForAdmin(): Promise<LocationListItem[]> {
+    const { data, error } = await this.admin
+      .from('location')
+      .select(LOCATION_COLUMNS)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      throw new InternalServerErrorException(`Failed to fetch locations: ${error.message}`);
+    }
+
+    return (data ?? []).map(toLocationListItem);
+  }
+
+  // Admin — create a location. Images are pre-uploaded to Storage; the body carries their metadata.
+  async createLocation(input: CreateLocationDto): Promise<LocationListItem> {
+    const row = {
+      name: input.name,
+      description: input.description,
+      latitude: input.latitude,
+      longitude: input.longitude,
+      place_position: input.placePosition,
+      category: input.category,
+      type: input.type,
+      url: input.url ?? null,
+      end_date: input.endDate ?? null,
+      tags: input.tags ?? null,
+      img_url: input.imgUrl ?? null,
+      preview_img: input.previewImg ?? null,
+      average_rating: 0, // NOT NULL with no DB default
+    };
+
+    const { data, error } = await this.admin
+      .from('location')
+      .insert(row)
+      .select(LOCATION_COLUMNS)
+      .single();
+
+    if (error) {
+      throw new InternalServerErrorException(`Failed to create location: ${error.message}`);
+    }
+
+    return toLocationListItem(data);
+  }
+
+  // Admin — partial update. Only the keys present in the body are written;
+  // an explicit null clears a nullable column. id/created_at/average_rating are never touched.
+  async updateLocation(id: string, input: UpdateLocationDto): Promise<LocationListItem> {
+    const COLUMN_MAP: Record<string, string> = {
+      placePosition: 'place_position',
+      endDate: 'end_date',
+      imgUrl: 'img_url',
+      previewImg: 'preview_img',
+    };
+
+    const patch: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(input)) {
+      if (value === undefined) continue; // omitted → leave unchanged
+      patch[COLUMN_MAP[key] ?? key] = value; // null is kept intentionally (clear)
+    }
+
+    // Nothing to change — just return the current row (404 if it doesn't exist).
+    if (Object.keys(patch).length === 0) {
+      return this.findById(id);
+    }
+
+    const { data, error } = await this.admin
+      .from('location')
+      .update(patch)
+      .eq('id', id)
+      .select(LOCATION_COLUMNS)
+      .maybeSingle();
+
+    if (error) {
+      throw new InternalServerErrorException(`Failed to update location: ${error.message}`);
+    }
+    if (!data) {
+      throw new NotFoundException(`Location ${id} not found`);
     }
 
     return toLocationListItem(data);
