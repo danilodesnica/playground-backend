@@ -15,6 +15,11 @@ export class AdminLocationsController {
     return this.locations.listAllForAdmin();
   }
 
+  @Get('locations/:id')
+  async findOne(@Param('id', new ParseUUIDPipe()) id: string): Promise<LocationListItem> {
+    return this.locations.findById(id);
+  }
+
   @Post('create-location')
   async create(@Body() body: CreateLocationDto): Promise<LocationListItem> {
     return this.locations.createLocation(body);

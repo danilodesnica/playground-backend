@@ -34,7 +34,6 @@ export class AuthService {
   ) { }
 
   async login({ email, password }: LoginDto): Promise<{ authToken: string }> {
-    console.log(email, password);
     const { data, error } = await this.supabase.auth.signInWithPassword({ email, password });
 
     if (error || !data?.session?.access_token) {
@@ -87,7 +86,11 @@ export class AuthService {
     // Intentionally don't surface whether the email exists or whether SendGrid failed —
     // prevents enumeration attacks. Always return success; log failures server-side.
     try {
-      const publicAppUrl = this.config.get<string>('PUBLIC_APP_URL') ?? 'https://playground-backend-o39o.onrender.com';
+      const publicAppUrl = this.config.get<string>('PUBLIC_APP_URL');
+      if (!publicAppUrl) {
+        console.error('[auth.sendResetPasswordEmail] PUBLIC_APP_URL is not configured');
+        return { success: true };
+      }
       const { data, error } = await this.admin.auth.admin.generateLink({
         type: 'recovery',
         email,
@@ -104,30 +107,17 @@ export class AuthService {
       const fromName = this.config.get<string>('SENDGRID_FROM_NAME');
       const templateId = this.config.get<string>('SENDGRID_RESET_PASSWORD_TEMPLATE_ID');
 
-      console.log('[sendgrid.debug] env:', {
-        apiKeyPrefix: apiKey?.slice(0, 7),
-        apiKeyLength: apiKey?.length,
-        fromEmail,
-        fromName,
-        templateId,
-        actionLinkPreview: data.properties.action_link.slice(0, 60) + '...',
-      });
-
       if (!apiKey || !fromEmail || !templateId) {
         console.error('[sendgrid.debug] missing env var(s)');
         return { success: true };
       }
 
       sgMail.setApiKey(apiKey);
-      const [response] = await sgMail.send({
+      await sgMail.send({
         to: email,
         from: { email: fromEmail, name: fromName ?? 'Playtime' },
         templateId,
         dynamicTemplateData: { resetPasswordLink: data.properties.action_link },
-      });
-      console.log('[sendgrid.debug] success:', {
-        statusCode: response.statusCode,
-        messageId: response.headers['x-message-id'],
       });
     } catch (err) {
       const e = err as { code?: number; message?: string; response?: { body?: unknown; headers?: unknown } };
@@ -167,7 +157,6 @@ export class AuthService {
   }
 
   async me(userId: string): Promise<UserProfile> {
-    console.log(userId);
     const { data, error } = await this.admin
       .from('users')
       .select('id, email, name, code, is_admin, created_at')

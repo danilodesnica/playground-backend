@@ -90,6 +90,18 @@ export class OffersService {
     return toOfferDto(data);
   }
 
+  // Admin — every offer, newest first, without the per-user isSaved flag.
+  async listAllForAdmin(): Promise<OfferDto[]> {
+    const { data, error } = await this.admin
+      .from('offers')
+      .select(OFFER_COLUMNS)
+      .order('created_at', { ascending: false });
+    if (error) {
+      throw new InternalServerErrorException(`Failed to fetch offers: ${error.message}`);
+    }
+    return (data ?? []).map((row: any) => toOfferDto(row));
+  }
+
   // Admin — create an offer. Images are pre-uploaded to Storage; the body carries their metadata.
   async createOffer(input: CreateOfferDto): Promise<OfferDto> {
     const row = {

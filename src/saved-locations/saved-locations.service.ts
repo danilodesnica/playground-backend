@@ -60,6 +60,14 @@ export class SavedLocationsService {
   async create(jwtUserId: string, body: SavedLocationBodyDto): Promise<SavedLocationRow> {
     assertOwner(jwtUserId, body.user_id);
 
+    // Idempotent: a location is saved at most once per user. Return the existing row
+    // instead of creating a duplicate (a UNIQUE constraint also enforces this at the DB).
+    const existing = await this.findSavedRow(jwtUserId, body.location_id);
+    if (existing) {
+      this.interactions.track(jwtUserId, body.location_id, 'favorite');
+      return existing;
+    }
+
     const { data, error } = await this.admin
       .from('saved_location')
       .insert({ user_id: jwtUserId, location_id: body.location_id })
@@ -67,8 +75,17 @@ export class SavedLocationsService {
       .single();
 
     if (error) {
-      if ((error as { code?: string }).code === '23503') {
+      const code = (error as { code?: string }).code;
+      if (code === '23503') {
         throw new BadRequestException('Invalid location_id (no matching location row)');
+      }
+      // Race: another request saved it between our check and insert — return that row.
+      if (code === '23505') {
+        const row = await this.findSavedRow(jwtUserId, body.location_id);
+        if (row) {
+          this.interactions.track(jwtUserId, body.location_id, 'favorite');
+          return row;
+        }
       }
       throw new InternalServerErrorException(`Failed to save location: ${error.message}`);
     }
@@ -76,6 +93,16 @@ export class SavedLocationsService {
     this.interactions.track(jwtUserId, body.location_id, 'favorite');
 
     return data as SavedLocationRow;
+  }
+
+  private async findSavedRow(userId: string, locationId: string): Promise<SavedLocationRow | null> {
+    const { data } = await this.admin
+      .from('saved_location')
+      .select('id, user_id, location_id, created_at')
+      .eq('user_id', userId)
+      .eq('location_id', locationId)
+      .maybeSingle();
+    return (data as SavedLocationRow) ?? null;
   }
 
   async findAllByUser(jwtUserId: string, pathUserId: string): Promise<SavedLocationWithLocation[]> {

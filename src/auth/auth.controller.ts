@@ -35,7 +35,7 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtAuthGuard)
   async logout(): Promise<{ success: true }> {
-    console.log('LOGOUT');
+    // Stateless JWT — nothing to revoke server-side; the client discards the token.
     return { success: true };
   }
 

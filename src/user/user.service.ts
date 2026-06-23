@@ -7,14 +7,83 @@ import {
 } from '@nestjs/common';
 import { SupabaseClient, User } from '@supabase/supabase-js';
 import { SUPABASE_ADMIN } from '../supabase/supabase.module';
+import type { UserProfile } from '../auth/auth.service';
+import { UpdateUserDto } from './dto/update-user.dto';
+
+const PROFILE_COLUMNS = 'id, email, name, code, is_admin, created_at';
 
 @Injectable()
 export class UserService {
   constructor(@Inject(SUPABASE_ADMIN) private readonly admin: SupabaseClient) {}
 
+  // is_admin lives in public.users (the source of truth). getUser().app_metadata
+  // does NOT carry it, so authorize against the table — matching AdminAuthGuard.
+  private async isAdmin(userId: string): Promise<boolean> {
+    const { data } = await this.admin
+      .from('users')
+      .select('is_admin')
+      .eq('id', userId)
+      .maybeSingle();
+    return data?.is_admin === true;
+  }
+
+  private async getProfile(id: string): Promise<UserProfile> {
+    const { data, error } = await this.admin
+      .from('users')
+      .select(PROFILE_COLUMNS)
+      .eq('id', id)
+      .maybeSingle();
+    if (error || !data) {
+      throw new NotFoundException(`User ${id} not found`);
+    }
+    return {
+      id: data.id,
+      email: data.email,
+      name: data.name,
+      code: data.code,
+      isAdmin: data.is_admin,
+      createdAt: data.created_at,
+    };
+  }
+
+  async updateById(jwtUser: User, targetId: string, input: UpdateUserDto): Promise<UserProfile> {
+    if (jwtUser.id !== targetId && !(await this.isAdmin(jwtUser.id))) {
+      throw new ForbiddenException("Cannot update another user's profile");
+    }
+
+    // Password change goes through the Auth admin API.
+    if (input.password) {
+      const { error } = await this.admin.auth.admin.updateUserById(targetId, {
+        password: input.password,
+      });
+      if (error) {
+        throw new InternalServerErrorException(`Failed to update password: ${error.message}`);
+      }
+    }
+
+    // Name change: keep public.users and auth user_metadata in sync.
+    if (input.name !== undefined) {
+      const { error: profileErr } = await this.admin
+        .from('users')
+        .update({ name: input.name })
+        .eq('id', targetId);
+      if (profileErr) {
+        throw new InternalServerErrorException(`Failed to update profile: ${profileErr.message}`);
+      }
+
+      const { error: metaErr } = await this.admin.auth.admin.updateUserById(targetId, {
+        user_metadata: { name: input.name },
+      });
+      if (metaErr) {
+        throw new InternalServerErrorException(`Failed to update auth metadata: ${metaErr.message}`);
+      }
+    }
+
+    return this.getProfile(targetId);
+  }
+
   async deleteById(jwtUser: User, targetId: string): Promise<{ success: true }> {
-    const isAdmin = ((jwtUser.app_metadata as { is_admin?: boolean } | undefined)?.is_admin) ?? false;
-    if (jwtUser.id !== targetId && !isAdmin) {
+    if (jwtUser.id !== targetId && !(await this.isAdmin(jwtUser.id))) {
       throw new ForbiddenException("Cannot delete another user's profile");
     }
 

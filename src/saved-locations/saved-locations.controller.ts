@@ -27,7 +27,6 @@ export class SavedLocationsController {
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async save(@CurrentUser() user: User, @Body() body: SavedLocationBodyDto): Promise<SavedLocationRow> {
-    console.log('CALLED')
     return this.service.create(user.id, body);
   }
 

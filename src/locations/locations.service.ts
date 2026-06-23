@@ -218,73 +218,58 @@ export class LocationsService {
     search?: string;
     longitude?: number;
     latitude?: number;
+    longitudeDelta?: number;
+    latitudeDelta?: number;
   }): Promise<LocationListItem[]> {
-    console.log('[locations.findFiltered] raw query:', JSON.stringify(q));
-
     const today = new Date().toISOString().split('T')[0];
-    const appliedFilters: string[] = [];
+
+    // Pad the viewport slightly so markers just off-screen are ready when the user pans.
+    const VIEWPORT_PAD = 1.15;
+    // Legacy fixed box (degrees) for older App Store builds that send only a center point.
+    const LEGACY_BOX = 0.03;
+    // Safety cap on payload size (the table has ~1k+ rows; client clusters them).
+    const MAX_RESULTS = 2000;
 
     let query = this.admin
       .from('location')
-      .select(
-        'id, created_at, latitude, longitude, name, end_date, category, url, description, tags, place_position, type, img_url, preview_img, reviews, average_rating',
-      )
+      .select(LOCATION_COLUMNS)
       .or(`end_date.is.null,end_date.gte.${today}`);
-    appliedFilters.push(`end_date IS NULL OR >= ${today}`);
 
     if (q.type && q.type !== 'all') {
       query = query.eq('type', q.type);
-      appliedFilters.push(`type = '${q.type}'`);
-    } else {
-      console.log('[locations.findFiltered] type filter skipped:', q.type ?? '(undefined)');
     }
 
     if (q.filters && q.filters.length > 0) {
       query = query.overlaps('tags', q.filters);
-      appliedFilters.push(`tags && [${q.filters.map((t) => `'${t}'`).join(',')}]`);
-    } else {
-      console.log('[locations.findFiltered] tags filter skipped');
     }
 
     if (q.search) {
       const safe = q.search.replace(/[,()*]/g, ' ').replace(/%/g, '\\%');
       query = query.or(`name.ilike.%${safe}%,place_position.ilike.%${safe}%`);
-      appliedFilters.push(`name OR place_position ILIKE %${safe}%`);
-    } else {
-      console.log('[locations.findFiltered] search filter skipped');
     }
 
+    // Latitude bounds: real viewport box when a delta is provided, else legacy fixed box.
     if (q.latitude !== undefined) {
-      const lo = q.latitude - 0.03;
-      const hi = q.latitude + 0.03;
-      query = query.gte('latitude', lo).lte('latitude', hi);
-      appliedFilters.push(`latitude BETWEEN ${lo} AND ${hi}`);
-    } else {
-      console.log('[locations.findFiltered] latitude filter skipped');
+      const half =
+        q.latitudeDelta !== undefined ? (q.latitudeDelta * VIEWPORT_PAD) / 2 : LEGACY_BOX;
+      query = query.gte('latitude', q.latitude - half).lte('latitude', q.latitude + half);
     }
 
+    // Longitude bounds: same scheme.
     if (q.longitude !== undefined) {
-      const lo = q.longitude - 0.03;
-      const hi = q.longitude + 0.03;
-      query = query.gte('longitude', lo).lte('longitude', hi);
-      appliedFilters.push(`longitude BETWEEN ${lo} AND ${hi}`);
-    } else {
-      console.log('[locations.findFiltered] longitude filter skipped');
+      const half =
+        q.longitudeDelta !== undefined ? (q.longitudeDelta * VIEWPORT_PAD) / 2 : LEGACY_BOX;
+      query = query.gte('longitude', q.longitude - half).lte('longitude', q.longitude + half);
     }
 
-    query = query.order('created_at', { ascending: false });
-
-    console.log('[locations.findFiltered] applied:', appliedFilters);
+    query = query.order('created_at', { ascending: false }).limit(MAX_RESULTS);
 
     const { data, error } = await query;
     if (error) {
-      console.error('[locations.findFiltered] supabase error:', error);
       throw new InternalServerErrorException(`Failed to fetch locations: ${error.message}`);
     }
 
-    const rows = (data ?? []).map(toLocationListItem);
-    console.log(`[locations.findFiltered] returned ${rows.length} rows`);
-    return rows;
+    return (data ?? []).map(toLocationListItem);
   }
 
   async findById(id: string, userId?: string): Promise<LocationListItem> {

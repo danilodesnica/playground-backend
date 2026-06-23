@@ -47,6 +47,12 @@ export class SavedOffersService {
   async create(jwtUserId: string, payload: SavedOfferPayloadDto): Promise<SavedOfferRow> {
     assertOwner(jwtUserId, payload.user_id);
 
+    // Idempotent: an offer is saved at most once per user.
+    const existing = await this.findSavedRow(jwtUserId, payload.offers_id);
+    if (existing) {
+      return existing;
+    }
+
     const { data, error } = await this.admin
       .from('saved_offers')
       .insert({ user_id: jwtUserId, offers_id: payload.offers_id })
@@ -54,12 +60,35 @@ export class SavedOffersService {
       .single();
 
     if (error) {
-      if ((error as { code?: string }).code === '23503') {
+      const code = (error as { code?: string }).code;
+      if (code === '23503') {
         throw new BadRequestException('Invalid offers_id (no matching offer row)');
+      }
+      // Race: another request saved it between our check and insert — return that row.
+      if (code === '23505') {
+        const row = await this.findSavedRow(jwtUserId, payload.offers_id);
+        if (row) return row;
       }
       throw new InternalServerErrorException(`Failed to save offer: ${error.message}`);
     }
     return data as SavedOfferRow;
+  }
+
+  private async findSavedRow(userId: string, offersId: number): Promise<SavedOfferRow | null> {
+    const { data } = await this.admin
+      .from('saved_offers')
+      .select('id, user_id, offers_id, created_at')
+      .eq('user_id', userId)
+      .eq('offers_id', offersId)
+      .maybeSingle();
+    if (!data) return null;
+    const row = data as { id: number | string; user_id: string; offers_id: number | string; created_at: string };
+    return {
+      id: Number(row.id),
+      user_id: row.user_id,
+      offers_id: Number(row.offers_id),
+      created_at: row.created_at,
+    };
   }
 
   async findAllByMe(jwtUserId: string): Promise<SavedOfferWithOffer[]> {

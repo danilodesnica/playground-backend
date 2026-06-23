@@ -72,13 +72,15 @@ export class ReviewsService {
       throw new ForbiddenException('user_id in body does not match the authenticated user');
     }
 
-    // 1) Insert the review (status defaults to 'pending')
+    // Insert the review (status defaults to 'pending'). The reviews_stats DB trigger
+    // (migration 0006) recomputes location.average_rating and location.reviews from
+    // approved reviews — no manual, non-atomic read-modify-write here.
     const { data: review, error: insertErr } = await this.admin
       .from('reviews')
       .insert({
         user_id: jwtUserId,
         location_id: body.location_id,
-        review: body.review,
+        review: body.review ?? '',
         rating: body.rating,
       })
       .select('id, created_at, user_id, location_id, review, rating, status')
@@ -91,34 +93,7 @@ export class ReviewsService {
       throw new InternalServerErrorException(`Failed to create review: ${insertErr.message}`);
     }
 
-    const created = toReviewRow(review);
-
-    // 2) Append review.id to location.reviews uuid[] (fetch + update — atomic enough for low traffic)
-    const { data: loc, error: locFetchErr } = await this.admin
-      .from('location')
-      .select('reviews')
-      .eq('id', body.location_id)
-      .maybeSingle();
-
-    if (locFetchErr) {
-      throw new InternalServerErrorException(`Review created but failed to fetch location: ${locFetchErr.message}`);
-    }
-    if (!loc) {
-      throw new NotFoundException(`Location ${body.location_id} not found (review row still exists)`);
-    }
-
-    const updatedReviews: string[] = [...((loc.reviews as string[] | null) ?? []), created.id];
-
-    const { error: updateErr } = await this.admin
-      .from('location')
-      .update({ reviews: updatedReviews })
-      .eq('id', body.location_id);
-
-    if (updateErr) {
-      throw new InternalServerErrorException(`Review created but failed to append to location.reviews: ${updateErr.message}`);
-    }
-
-    return created;
+    return toReviewRow(review);
   }
 
   async findApprovedByLocation(locationId: string): Promise<ReviewWithUser[]> {

@@ -1,4 +1,4 @@
-import { Body, Controller, Param, ParseIntPipe, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, UseGuards } from '@nestjs/common';
 import { AdminAuthGuard } from '../auth/admin-auth.guard';
 import { CreateOfferDto } from './dto/create-offer.dto';
 import { UpdateOfferDto } from './dto/update-offer.dto';
@@ -9,6 +9,16 @@ import type { OfferDto } from './offers.service';
 @UseGuards(AdminAuthGuard)
 export class AdminOffersController {
   constructor(private readonly offers: OffersService) {}
+
+  @Get('offers')
+  async listAll(): Promise<OfferDto[]> {
+    return this.offers.listAllForAdmin();
+  }
+
+  @Get('offers/:id')
+  async findOne(@Param('id', ParseIntPipe) id: number): Promise<OfferDto> {
+    return this.offers.findById(id);
+  }
 
   @Post('create-offer')
   async create(@Body() body: CreateOfferDto): Promise<OfferDto> {

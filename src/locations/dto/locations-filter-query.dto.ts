@@ -17,6 +17,11 @@ export const LocationsFilterQuerySchema = z.object({
   search: z.string().trim().min(1).optional(),
   longitude: z.coerce.number().optional(),
   latitude: z.coerce.number().optional(),
+  // Viewport span (degrees). New mobile clients send these so the server can query
+  // the actual visible map box instead of a fixed ±0.03° window. Older App Store
+  // builds omit them and fall back to the legacy box (back-compat).
+  longitudeDelta: z.coerce.number().positive().optional(),
+  latitudeDelta: z.coerce.number().positive().optional(),
 });
 
 export class LocationsFilterQueryDto extends createZodDto(LocationsFilterQuerySchema) {}
