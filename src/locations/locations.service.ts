@@ -244,11 +244,15 @@ export class LocationsService {
     }
 
     if (q.search) {
-      const safe = q.search.replace(/[,()*]/g, ' ').replace(/%/g, '\\%');
-      // Match the name, the place/area attached to the location, and the description.
-      query = query.or(
-        `name.ilike.%${safe}%,place_position.ilike.%${safe}%,description.ilike.%${safe}%`,
-      );
+      const safe = q.search.replace(/[,()*]/g, ' ').replace(/%/g, '\\%').trim();
+      // Each word must appear in the name, place/area, OR description (words are
+      // ANDed, fields ORed) so multi-word queries like "bondi playground" work.
+      const tokens = safe.split(/\s+/).filter(Boolean).slice(0, 6);
+      for (const tok of tokens) {
+        query = query.or(
+          `name.ilike.%${tok}%,place_position.ilike.%${tok}%,description.ilike.%${tok}%`,
+        );
+      }
     }
 
     // Latitude bounds: real viewport box when a delta is provided, else legacy fixed box.
