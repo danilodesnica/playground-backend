@@ -245,7 +245,10 @@ export class LocationsService {
 
     if (q.search) {
       const safe = q.search.replace(/[,()*]/g, ' ').replace(/%/g, '\\%');
-      query = query.or(`name.ilike.%${safe}%,place_position.ilike.%${safe}%`);
+      // Match the name, the place/area attached to the location, and the description.
+      query = query.or(
+        `name.ilike.%${safe}%,place_position.ilike.%${safe}%,description.ilike.%${safe}%`,
+      );
     }
 
     // Latitude bounds: real viewport box when a delta is provided, else legacy fixed box.
