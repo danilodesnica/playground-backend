@@ -6,7 +6,7 @@ import { CreateLocationDto } from './dto/create-location.dto';
 import { UpdateLocationDto } from './dto/update-location.dto';
 
 const LOCATION_COLUMNS =
-  'id, created_at, latitude, longitude, name, end_date, category, url, description, tags, place_position, type, img_url, preview_img, reviews, average_rating';
+  'id, created_at, latitude, longitude, name, end_date, category, url, description, tags, place_position, type, img_url, preview_img, reviews, average_rating, cafe_name, cafe_subtitle, cafe_image_url, cafe_directions_url';
 
 export interface LocationDto {
   id: string;
@@ -25,6 +25,10 @@ export interface LocationDto {
   previewImg: Array<Record<string, unknown>> | null;
   reviews: string[] | null;
   averageRating: number;
+  cafeName: string | null;
+  cafeSubtitle: string | null;
+  cafeImageUrl: string | null;
+  cafeDirectionsUrl: string | null;
 }
 
 export interface FeaturedLocations {
@@ -52,6 +56,10 @@ export interface LocationListItem {
   previewImg: Array<Record<string, unknown>> | null;
   reviews: string[] | null;
   averageRating: number;
+  cafeName: string | null;
+  cafeSubtitle: string | null;
+  cafeImageUrl: string | null;
+  cafeDirectionsUrl: string | null;
 }
 
 export interface LocationListResponse {
@@ -113,6 +121,10 @@ function toLocationDto(row: any): LocationDto {
     previewImg: row.preview_img,
     reviews: row.reviews,
     averageRating: Number(row.average_rating),
+    cafeName: row.cafe_name ?? null,
+    cafeSubtitle: row.cafe_subtitle ?? null,
+    cafeImageUrl: row.cafe_image_url ?? null,
+    cafeDirectionsUrl: row.cafe_directions_url ?? null,
   };
 }
 
@@ -134,6 +146,10 @@ export function toLocationListItem(row: any): LocationListItem {
     previewImg: row.preview_img,
     reviews: row.reviews,
     averageRating: Number(row.average_rating),
+    cafeName: row.cafe_name ?? null,
+    cafeSubtitle: row.cafe_subtitle ?? null,
+    cafeImageUrl: row.cafe_image_url ?? null,
+    cafeDirectionsUrl: row.cafe_directions_url ?? null,
   };
 }
 
@@ -332,6 +348,10 @@ export class LocationsService {
       img_url: input.imgUrl ?? null,
       preview_img: input.previewImg ?? null,
       average_rating: 0, // NOT NULL with no DB default
+      cafe_name: input.cafeName ?? null,
+      cafe_subtitle: input.cafeSubtitle ?? null,
+      cafe_image_url: input.cafeImageUrl ?? null,
+      cafe_directions_url: input.cafeDirectionsUrl ?? null,
     };
 
     const { data, error } = await this.admin
@@ -355,6 +375,10 @@ export class LocationsService {
       endDate: 'end_date',
       imgUrl: 'img_url',
       previewImg: 'preview_img',
+      cafeName: 'cafe_name',
+      cafeSubtitle: 'cafe_subtitle',
+      cafeImageUrl: 'cafe_image_url',
+      cafeDirectionsUrl: 'cafe_directions_url',
     };
 
     const patch: Record<string, unknown> = {};

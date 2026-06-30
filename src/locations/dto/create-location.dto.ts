@@ -35,6 +35,11 @@ export const CreateLocationSchema = z.object({
   }, z.array(z.string()).optional()),
   imgUrl: imageMetaSchema.optional(),
   previewImg: z.array(imageMetaSchema).optional(),
+  // Optional "nearest cafe" (all nullable; a non-empty string or null/omitted).
+  cafeName: z.string().trim().min(1).nullable().optional(),
+  cafeSubtitle: z.string().trim().min(1).nullable().optional(),
+  cafeImageUrl: z.string().trim().min(1).nullable().optional(),
+  cafeDirectionsUrl: z.string().trim().min(1).nullable().optional(),
 });
 
 export class CreateLocationDto extends createZodDto(CreateLocationSchema) {}
