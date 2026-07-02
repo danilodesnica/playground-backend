@@ -29,8 +29,17 @@ export interface ReviewUser {
   created_at: number;
 }
 
+export interface ReviewLocation {
+  id: string;
+  name: string;
+  type: string;
+  placePosition: string | null;
+}
+
 export interface ReviewWithUser extends ReviewRow {
   user: ReviewUser | null;
+  /** Populated on the admin list so moderators can see what the review is for. */
+  location?: ReviewLocation | null;
 }
 
 function toMs(value: unknown): number {
@@ -117,13 +126,15 @@ export class ReviewsService {
     }));
   }
 
-  // Admin — every review (all statuses), newest first, with the author joined.
+  // Admin — every review (all statuses), newest first, with the author AND the
+  // reviewed location joined so moderators can see what each review is for.
   async listAllForAdmin(): Promise<ReviewWithUser[]> {
     const { data, error } = await this.admin
       .from('reviews')
       .select(`
         id, created_at, user_id, location_id, review, rating, status,
-        user:user_id (id, email, name, code, is_admin, created_at)
+        user:user_id (id, email, name, code, is_admin, created_at),
+        location:location_id (id, name, type, place_position)
       `)
       .order('created_at', { ascending: false });
 
@@ -134,6 +145,14 @@ export class ReviewsService {
     return (data ?? []).map((row: any) => ({
       ...toReviewRow(row),
       user: row.user ? toReviewUser(row.user) : null,
+      location: row.location
+        ? {
+            id: row.location.id,
+            name: row.location.name,
+            type: row.location.type,
+            placePosition: row.location.place_position ?? null,
+          }
+        : null,
     }));
   }
 
