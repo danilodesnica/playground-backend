@@ -33,17 +33,34 @@ export class AuthService {
     private readonly config: ConfigService,
   ) { }
 
-  async login({ email, password }: LoginDto): Promise<{ authToken: string }> {
+  async login({ email, password }: LoginDto): Promise<{ authToken: string; refreshToken: string }> {
     const { data, error } = await this.supabase.auth.signInWithPassword({ email, password });
 
     if (error || !data?.session?.access_token) {
       throw new UnauthorizedException(error?.message ?? 'Invalid email or password');
     }
 
-    return { authToken: data.session.access_token };
+    return {
+      authToken: data.session.access_token,
+      refreshToken: data.session.refresh_token,
+    };
   }
 
-  async signup({ email, password, name, postCode }: SignupDto): Promise<{ authToken: string; browse: boolean }> {
+  // Exchange a Supabase refresh token for a fresh access token so the mobile app
+  // keeps the session alive instead of logging the user out the moment the
+  // (short-lived) access token expires.
+  async refresh({ refreshToken }: { refreshToken: string }): Promise<{ authToken: string; refreshToken: string }> {
+    const { data, error } = await this.supabase.auth.refreshSession({ refresh_token: refreshToken });
+    if (error || !data?.session?.access_token || !data?.session?.refresh_token) {
+      throw new UnauthorizedException('Session expired, please log in again');
+    }
+    return {
+      authToken: data.session.access_token,
+      refreshToken: data.session.refresh_token,
+    };
+  }
+
+  async signup({ email, password, name, postCode }: SignupDto): Promise<{ authToken: string; refreshToken: string; browse: boolean }> {
     const { error: createErr } = await this.admin.auth.admin.createUser({
       email,
       password,
@@ -78,6 +95,7 @@ export class AuthService {
 
     return {
       authToken: signInData.session.access_token,
+      refreshToken: signInData.session.refresh_token,
       browse: (match?.length ?? 0) > 0,
     };
   }
