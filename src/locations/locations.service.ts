@@ -340,7 +340,7 @@ export class LocationsService {
       latitude: input.latitude,
       longitude: input.longitude,
       place_position: input.placePosition,
-      category: input.category,
+      category: input.category ?? '', // column is NOT NULL; '' = uncategorized
       type: input.type,
       url: input.url ?? null,
       end_date: input.endDate ?? null,

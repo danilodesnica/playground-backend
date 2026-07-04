@@ -17,7 +17,8 @@ export const CreateLocationSchema = z.object({
   latitude: z.coerce.number(),
   longitude: z.coerce.number(),
   placePosition: z.string().trim().min(1),
-  category: z.string().trim().min(1),
+  // Optional: a location that isn't featured in any homepage rail has no category.
+  category: z.string().trim().optional(),
   type: z.enum(['playground', 'event']),
   url: z.url().optional(),
   // ISO date string (YYYY-MM-DD); maps to the nullable end_date column.

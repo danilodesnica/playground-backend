@@ -28,6 +28,30 @@ describe('UpdateLocationSchema — cafe fields', () => {
     expect(parsed.cafeImageUrl).toBeNull();
   });
 
+  it('REPRO: a record with an empty category must not fail the whole save', () => {
+    // Locations that aren't in any homepage rail hold category '' — the admin
+    // form round-trips that as "". If the schema rejects it, adding a cafe to
+    // any uncategorized playground fails entirely.
+    const body = {
+      name: 'Some Local Playground',
+      description: 'Nice spot.',
+      latitude: -33.9,
+      longitude: 151.2,
+      placePosition: 'Bondi',
+      category: '',
+      type: 'playground',
+      tags: [],
+      url: null,
+      endDate: null,
+      cafeName: 'Corner Cafe',
+      cafeSubtitle: null,
+      cafeDirectionsUrl: null,
+      cafeImageUrl: null,
+    };
+    const result = UpdateLocationSchema.safeParse(body);
+    expect(result.success).toBe(true);
+  });
+
   it('accepts explicit nulls (clearing a cafe)', () => {
     const parsed = UpdateLocationSchema.parse({
       cafeName: null,
