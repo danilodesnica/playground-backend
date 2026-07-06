@@ -1,5 +1,7 @@
 import {
   BadRequestException,
+  HttpException,
+  HttpStatus,
   Inject,
   Injectable,
   InternalServerErrorException,
@@ -15,6 +17,12 @@ const IDENT_RE = /^[A-Za-z0-9_-]{1,64}$/;
 
 /** Serialized props larger than this are dropped (replaced with {}) to keep rows bounded. */
 const MAX_PROPS_JSON_LENGTH = 4000;
+
+/** Ingest rate limit: max batches per IP per fixed window. */
+const INGEST_MAX_BATCHES_PER_WINDOW = 60;
+const INGEST_WINDOW_MS = 60_000;
+/** Above this many tracked IPs, expired windows are swept on the next hit. */
+const INGEST_MAP_SWEEP_THRESHOLD = 10_000;
 
 export interface DailyRow {
   day: string;
@@ -33,6 +41,22 @@ export interface OverviewResponse {
     newUsers: number;
     avgSessionSecs: number;
   };
+}
+
+export interface LifetimeRow {
+  total_users: number;
+  total_favorites: number;
+  total_reviews_approved: number;
+  avg_rating: number;
+  live_locations: number;
+  pending_reviews: number;
+}
+
+export interface EngagementRow {
+  dau_yesterday: number;
+  wau: number;
+  mau: number;
+  stickiness: number;
 }
 
 function toDateString(d: Date): string {
@@ -58,10 +82,36 @@ function toClientTs(ts: number): string | null {
 export class AnalyticsService {
   private readonly logger = new Logger(AnalyticsService.name);
 
+  /** Fixed-window per-IP ingest counters (in-memory; per-instance by design). */
+  private readonly ingestWindows = new Map<string, { count: number; windowStart: number }>();
+
   constructor(
     @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
     @Inject(SUPABASE_ADMIN) private readonly admin: SupabaseClient,
   ) {}
+
+  /** Throws 429 when an IP exceeds INGEST_MAX_BATCHES_PER_WINDOW in the current window. */
+  private checkIngestRateLimit(ip: string): void {
+    const now = Date.now();
+
+    // Opportunistic sweep so the map can't grow unbounded under IP churn.
+    if (this.ingestWindows.size > INGEST_MAP_SWEEP_THRESHOLD) {
+      for (const [key, w] of this.ingestWindows) {
+        if (now - w.windowStart >= INGEST_WINDOW_MS) this.ingestWindows.delete(key);
+      }
+    }
+
+    const window = this.ingestWindows.get(ip);
+    if (!window || now - window.windowStart >= INGEST_WINDOW_MS) {
+      this.ingestWindows.set(ip, { count: 1, windowStart: now });
+      return;
+    }
+
+    window.count += 1;
+    if (window.count > INGEST_MAX_BATCHES_PER_WINDOW) {
+      throw new HttpException('Too many event batches, slow down', HttpStatus.TOO_MANY_REQUESTS);
+    }
+  }
 
   // ---------------------------------------------------------------------------
   // Ingest
@@ -72,6 +122,8 @@ export class AnalyticsService {
     authHeader: string | undefined,
     ip: string | undefined,
   ): Promise<{ accepted: number }> {
+    this.checkIngestRateLimit(ip || 'unknown');
+
     // Soft user attribution — mirrors JwtAuthGuard token handling, but a bad or
     // expired token NEVER rejects the batch; we just fall back to anonymous.
     let userId: string | null = null;
@@ -139,7 +191,7 @@ export class AnalyticsService {
   }
 
   // ---------------------------------------------------------------------------
-  // Admin analytics (RPC wrappers over the SQL functions in migration 0010)
+  // Admin analytics (RPC wrappers over the SQL functions in migrations 0010/0011)
   // ---------------------------------------------------------------------------
 
   private async rpc<T>(name: string, params?: Record<string, unknown>): Promise<T> {
@@ -205,6 +257,75 @@ export class AnalyticsService {
       p_to: range.to,
       p_limit: limit,
     });
+  }
+
+  // --- Insights v2: historical / database-wide queries (migration 0011) -------
+
+  /** All-time KPI row from the operational tables (not the pixel). */
+  async lifetime(): Promise<LifetimeRow> {
+    const rows = await this.rpc<LifetimeRow[]>('analytics_lifetime');
+    return (
+      rows[0] ?? {
+        total_users: 0,
+        total_favorites: 0,
+        total_reviews_approved: 0,
+        avg_rating: 0,
+        live_locations: 0,
+        pending_reviews: 0,
+      }
+    );
+  }
+
+  /** All-time monthly signups (Sydney months) from users.created_at. */
+  async signupsMonthly(): Promise<unknown> {
+    return this.rpc('analytics_signups_monthly');
+  }
+
+  /** All-time most favorited locations (saved_location). */
+  async topFavorited(limit = 50): Promise<unknown> {
+    return this.rpc('analytics_top_favorited', { p_limit: limit });
+  }
+
+  /** All-time most clicked locations (server-tracked user_interaction). */
+  async topClicked(limit = 50): Promise<unknown> {
+    return this.rpc('analytics_top_clicked', { p_limit: limit });
+  }
+
+  /** Daily distinct active users from user_interaction (server-tracked, pre-pixel history). */
+  async historicalActives(from?: string, to?: string): Promise<unknown> {
+    const range = resolveRange(from, to);
+    return this.rpc('analytics_historical_actives', { p_from: range.from, p_to: range.to });
+  }
+
+  /** Live locations with zero saves and zero interactions, oldest first. */
+  async deadInventory(): Promise<unknown> {
+    return this.rpc('analytics_dead_inventory');
+  }
+
+  /** All-time monthly review volume + average rating (avg over approved only). */
+  async reviewsTrend(): Promise<unknown> {
+    return this.rpc('analytics_reviews_trend');
+  }
+
+  /** Signup postcode distribution (users.code, suburb label from post_codes). */
+  async postcodes(limit = 30): Promise<unknown> {
+    return this.rpc('analytics_postcodes', { p_limit: limit });
+  }
+
+  /** DAU/WAU/MAU + stickiness from the pixel, anchored on the requested end date. */
+  async engagement(from?: string, to?: string): Promise<EngagementRow> {
+    const range = resolveRange(from, to);
+    const rows = await this.rpc<EngagementRow[]>('analytics_engagement', {
+      p_from: range.from,
+      p_to: range.to,
+    });
+    return rows[0] ?? { dau_yesterday: 0, wau: 0, mau: 0, stickiness: 0 };
+  }
+
+  /** Per-day DAU split by app version (pixel). */
+  async dauByVersion(from?: string, to?: string): Promise<unknown> {
+    const range = resolveRange(from, to);
+    return this.rpc('analytics_dau_by_version', { p_from: range.from, p_to: range.to });
   }
 
   /** Recent raw events for one identity — a user uuid or an anon install id. */

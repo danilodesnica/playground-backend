@@ -15,3 +15,11 @@ export const AnalyticsUsersQuerySchema = AnalyticsRangeQuerySchema.extend({
 });
 
 export class AnalyticsUsersQueryDto extends createZodDto(AnalyticsUsersQuerySchema) {}
+
+// Limit-only query (top-favorited / top-clicked / postcodes). When omitted the
+// service applies each endpoint's own default (50 / 50 / 30).
+export const AnalyticsLimitQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(500).optional(),
+});
+
+export class AnalyticsLimitQueryDto extends createZodDto(AnalyticsLimitQuerySchema) {}

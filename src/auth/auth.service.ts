@@ -61,7 +61,7 @@ export class AuthService {
   }
 
   async signup({ email, password, name, postCode }: SignupDto): Promise<{ authToken: string; refreshToken: string; browse: boolean }> {
-    const { error: createErr } = await this.admin.auth.admin.createUser({
+    const { data: created, error: createErr } = await this.admin.auth.admin.createUser({
       email,
       password,
       email_confirm: true,
@@ -91,6 +91,23 @@ export class AuthService {
       .limit(1);
     if (pcErr) {
       throw new InternalServerErrorException(`Postcode lookup failed: ${pcErr.message}`);
+    }
+
+    // Persist the signup postcode on the profile row (created by the auth
+    // trigger). Non-fatal: a failure here must never block a successful signup.
+    const newUserId = created?.user?.id;
+    if (newUserId) {
+      try {
+        const { error: codeErr } = await this.admin
+          .from('users')
+          .update({ code: postCode })
+          .eq('id', newUserId);
+        if (codeErr) {
+          console.error('[auth.signup] failed to persist postcode', newUserId, codeErr.message);
+        }
+      } catch (err) {
+        console.error('[auth.signup] failed to persist postcode', newUserId, err);
+      }
     }
 
     return {
