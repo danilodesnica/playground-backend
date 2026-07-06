@@ -186,7 +186,7 @@ export class LocationsService {
     const { data, count, error } = await this.admin
       .from('location')
       .select(
-        'id, created_at, latitude, longitude, name, end_date, category, url, description, tags, place_position, type, img_url, preview_img, reviews, average_rating',
+        LOCATION_COLUMNS,
         { count: 'exact' },
       )
       .eq('category', category)
@@ -299,7 +299,7 @@ export class LocationsService {
     const { data, error } = await this.admin
       .from('location')
       .select(
-        'id, created_at, latitude, longitude, name, end_date, category, url, description, tags, place_position, type, img_url, preview_img, reviews, average_rating',
+        LOCATION_COLUMNS,
       )
       .eq('id', id)
       .maybeSingle();
