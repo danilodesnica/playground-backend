@@ -328,6 +328,18 @@ export class AnalyticsService {
     return this.rpc('analytics_dau_by_version', { p_from: range.from, p_to: range.to });
   }
 
+  /** Deal engagement (view/save/open) over a Sydney-date range (pixel, migration 0012). */
+  async topOffers(from?: string, to?: string): Promise<unknown> {
+    const range = resolveRange(from, to);
+    return this.rpc('analytics_top_offers', { p_from: range.from, p_to: range.to });
+  }
+
+  /** All-time most saved deals (saved_offers, migration 0012). Limit capped at 200. */
+  async topSavedOffers(limit = 50): Promise<unknown> {
+    const capped = Math.min(Math.max(limit, 1), 200);
+    return this.rpc('analytics_top_saved_offers', { p_limit: capped });
+  }
+
   /** Recent raw events for one identity — a user uuid or an anon install id. */
   async userEvents(ident: string): Promise<unknown> {
     const isUuid = UUID_RE.test(ident);

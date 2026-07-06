@@ -104,4 +104,16 @@ export class AdminAnalyticsController {
   async dauByVersion(@Query() query: AnalyticsRangeQueryDto): Promise<unknown> {
     return this.service.dauByVersion(query.from, query.to);
   }
+
+  // --- Deals analytics (migration 0012) ---
+
+  @Get('top-offers')
+  async topOffers(@Query() query: AnalyticsRangeQueryDto): Promise<unknown> {
+    return this.service.topOffers(query.from, query.to);
+  }
+
+  @Get('top-saved-offers')
+  async topSavedOffers(@Query() query: AnalyticsLimitQueryDto): Promise<unknown> {
+    return this.service.topSavedOffers(query.limit ?? 50);
+  }
 }
