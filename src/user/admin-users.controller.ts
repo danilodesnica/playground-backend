@@ -23,7 +23,7 @@ export class AdminUsersController {
   async list(
     @Query() query: AdminUsersQueryDto,
   ): Promise<AdminUsersListResponse> {
-    return this.service.list(query.search, query.limit, query.offset);
+    return this.service.list(query.search, query.limit, query.offset, query.sort, query.dir);
   }
 
   @Get('users/:id')

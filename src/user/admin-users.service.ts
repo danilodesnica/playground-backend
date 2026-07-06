@@ -75,12 +75,16 @@ export class AdminUsersService {
     search: string | undefined,
     limit: number,
     offset: number,
+    sort = 'created_at',
+    dir = 'desc',
   ): Promise<AdminUsersListResponse> {
     const term = search && search.trim() !== '' ? search.trim() : null;
     const { data, error } = await this.admin.rpc('admin_users_list', {
       p_search: term,
       p_limit: limit,
       p_offset: offset,
+      p_sort: sort,
+      p_dir: dir,
     });
 
     if (error) {
