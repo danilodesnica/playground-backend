@@ -10,7 +10,9 @@ describe('AnalyticsService — ingest rate limit', () => {
       rpc: jest.fn(),
     };
     // Structural fakes; the service only touches auth.getUser / from().insert here.
-    return new AnalyticsService(supabase as never, admin as never);
+    // Inflation overlay is unused on the ingest path, so a bare stub suffices.
+    const inflation = {};
+    return new AnalyticsService(supabase as never, admin as never, inflation as never);
   };
 
   const batch: EventsBatchDto = {

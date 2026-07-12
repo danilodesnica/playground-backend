@@ -11,6 +11,11 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import geoip from 'fast-geoip';
 import { SUPABASE_ADMIN, SUPABASE_CLIENT } from '../supabase/supabase.module';
 import { EventsBatchDto } from './dto/events-batch.dto';
+import {
+  DauVersionRow,
+  InflationService,
+  ScreenRow,
+} from './inflation/inflation.service';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const IDENT_RE = /^[A-Za-z0-9_-]{1,64}$/;
@@ -88,6 +93,7 @@ export class AnalyticsService {
   constructor(
     @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
     @Inject(SUPABASE_ADMIN) private readonly admin: SupabaseClient,
+    private readonly inflation: InflationService,
   ) {}
 
   /** Throws 429 when an IP exceeds INGEST_MAX_BATCHES_PER_WINDOW in the current window. */
@@ -205,10 +211,12 @@ export class AnalyticsService {
 
   async overview(from?: string, to?: string): Promise<OverviewResponse> {
     const range = resolveRange(from, to);
-    const daily = await this.rpc<DailyRow[]>('analytics_daily', {
+    const rows = await this.rpc<DailyRow[]>('analytics_daily', {
       p_from: range.from,
       p_to: range.to,
     });
+    // Inflation overlay (no-op unless enabled); totals below recompute from it.
+    const daily = this.inflation.applyOverview(rows);
 
     let events = 0;
     let sessions = 0;
@@ -228,7 +236,11 @@ export class AnalyticsService {
 
   async screens(from?: string, to?: string): Promise<unknown> {
     const range = resolveRange(from, to);
-    return this.rpc('analytics_screens', { p_from: range.from, p_to: range.to });
+    const rows = await this.rpc<ScreenRow[]>('analytics_screens', {
+      p_from: range.from,
+      p_to: range.to,
+    });
+    return this.inflation.applyScreens(rows, range.from, range.to);
   }
 
   async geo(from?: string, to?: string): Promise<unknown> {
@@ -319,13 +331,18 @@ export class AnalyticsService {
       p_from: range.from,
       p_to: range.to,
     });
-    return rows[0] ?? { dau_yesterday: 0, wau: 0, mau: 0, stickiness: 0 };
+    const row = rows[0] ?? { dau_yesterday: 0, wau: 0, mau: 0, stickiness: 0 };
+    return this.inflation.applyEngagement(row, range.to);
   }
 
   /** Per-day DAU split by app version (pixel). */
   async dauByVersion(from?: string, to?: string): Promise<unknown> {
     const range = resolveRange(from, to);
-    return this.rpc('analytics_dau_by_version', { p_from: range.from, p_to: range.to });
+    const rows = await this.rpc<DauVersionRow[]>('analytics_dau_by_version', {
+      p_from: range.from,
+      p_to: range.to,
+    });
+    return this.inflation.applyDauByVersion(rows);
   }
 
   /** Deal engagement (view/save/open) over a Sydney-date range (pixel, migration 0012). */
