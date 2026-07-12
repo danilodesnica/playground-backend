@@ -1,7 +1,12 @@
 import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
 import { AdminAuthGuard } from '../auth/admin-auth.guard';
 import { AnalyticsService } from './analytics.service';
-import type { EngagementRow, LifetimeRow, OverviewResponse } from './analytics.service';
+import type {
+  EngagementRow,
+  LifetimeRow,
+  OverviewResponse,
+  TodayResponse,
+} from './analytics.service';
 import {
   AnalyticsLimitQueryDto,
   AnalyticsRangeQueryDto,
@@ -12,6 +17,11 @@ import {
 @UseGuards(AdminAuthGuard)
 export class AdminAnalyticsController {
   constructor(private readonly service: AnalyticsService) {}
+
+  @Get('today')
+  async today(): Promise<TodayResponse> {
+    return this.service.today();
+  }
 
   @Get('overview')
   async overview(@Query() query: AnalyticsRangeQueryDto): Promise<OverviewResponse> {

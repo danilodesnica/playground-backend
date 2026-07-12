@@ -64,6 +64,14 @@ export interface EngagementRow {
   stickiness: number;
 }
 
+export interface TodayResponse {
+  date: string; // Sydney YYYY-MM-DD
+  active_users: number;
+  sessions: number;
+  events: number;
+  last_event_at: string | null;
+}
+
 function toDateString(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
@@ -333,6 +341,49 @@ export class AnalyticsService {
     });
     const row = rows[0] ?? { dau_yesterday: 0, wau: 0, mau: 0, stickiness: 0 };
     return this.inflation.applyEngagement(row, range.to);
+  }
+
+  /**
+   * Live "today so far" counts for the current Sydney day, straight from the
+   * pixel table (real numbers — never inflated). Powers the top "Today so far"
+   * strip so fresh activity is visible immediately, without waiting for the day
+   * to close (unlike DAU which reports the last *complete* day).
+   */
+  async today(): Promise<TodayResponse> {
+    const date = new Date().toLocaleDateString('en-CA', { timeZone: 'Australia/Sydney' });
+    // Bounded recent window that covers all of Sydney "today" regardless of offset.
+    const since = new Date(Date.now() - 36 * 60 * 60 * 1000).toISOString();
+    const { data, error } = await this.admin
+      .from('app_events')
+      .select('anon_id, session_id, received_at')
+      .gte('received_at', since)
+      .order('received_at', { ascending: false })
+      .limit(50000);
+    if (error) {
+      this.logger.error(`Failed to fetch today's activity: ${error.message}`);
+      throw new InternalServerErrorException(`Failed to fetch today's activity: ${error.message}`);
+    }
+
+    const users = new Set<string>();
+    const sessions = new Set<string>();
+    let events = 0;
+    let lastEventAt: string | null = null;
+    for (const r of (data ?? []) as Array<{
+      anon_id: string | null;
+      session_id: string | null;
+      received_at: string;
+    }>) {
+      const rowDate = new Date(r.received_at).toLocaleDateString('en-CA', {
+        timeZone: 'Australia/Sydney',
+      });
+      if (rowDate !== date) continue;
+      events += 1;
+      if (r.anon_id) users.add(r.anon_id);
+      if (r.session_id) sessions.add(r.session_id);
+      if (!lastEventAt || r.received_at > lastEventAt) lastEventAt = r.received_at;
+    }
+
+    return { date, active_users: users.size, sessions: sessions.size, events, last_event_at: lastEventAt };
   }
 
   /** Per-day DAU split by app version (pixel). */
