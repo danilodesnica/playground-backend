@@ -318,18 +318,38 @@ export class LocationsService {
     return toLocationListItem(data);
   }
 
-  // Admin — full unfiltered list (includes expired events), newest first, no pagination.
+  // Admin — full unfiltered list (includes expired events), newest first.
+  // Pages through EVERY row: a plain .select() is silently capped at PostgREST's
+  // max-rows (1000 by default), which was dropping older locations from the admin
+  // (they still showed in the app via findById). We advance by the actual rows
+  // returned and use id as a stable tiebreak so a bulk import sharing one
+  // created_at can't cause a page boundary to skip or duplicate a row.
   async listAllForAdmin(): Promise<LocationListItem[]> {
-    const { data, error } = await this.admin
-      .from('location')
-      .select(LOCATION_COLUMNS)
-      .order('created_at', { ascending: false });
+    const PAGE = 1000;
+    const rows: any[] = [];
+    let total = Infinity;
+    let from = 0;
 
-    if (error) {
-      throw new InternalServerErrorException(`Failed to fetch locations: ${error.message}`);
+    while (from < total) {
+      const { data, error, count } = await this.admin
+        .from('location')
+        .select(LOCATION_COLUMNS, { count: 'exact' })
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: true })
+        .range(from, from + PAGE - 1);
+
+      if (error) {
+        throw new InternalServerErrorException(`Failed to fetch locations: ${error.message}`);
+      }
+      if (typeof count === 'number') total = count;
+
+      const batch = data ?? [];
+      if (batch.length === 0) break;
+      rows.push(...batch);
+      from += batch.length;
     }
 
-    return (data ?? []).map(toLocationListItem);
+    return rows.map(toLocationListItem);
   }
 
   // Admin — create a location. Images are pre-uploaded to Storage; the body carries their metadata.
