@@ -10,9 +10,9 @@
  *
  * Pure + deterministic: keyed only off the Sydney date string and the pool
  * index. Constants below were tuned (scratchpad/tune.mjs) so that at small
- * scale DAU lands ~17-32 with weekend peaks, steady-state stickiness ~0.29,
- * sessions ~= DAU x 1.3, and median session length ~130-190s. (Scaled +20%
- * from the original 14-27 band via baseMin/baseMax + POOL.)
+ * scale DAU lands ~24-46 with weekend peaks, steady-state stickiness ~0.35,
+ * sessions ~= DAU x 1.3, and median session length ~130-190s. (Scaled up from
+ * the original 14-27 band via baseMin/baseMax + POOL.)
  *
  * IMPORTANT: this never touches app_events. It is layered onto real aggregates
  * at read time in InflationService.
@@ -156,13 +156,14 @@ export function phantomEngagement(ds: string, p: PhantomParams): PhantomEngageme
 }
 
 // Diurnal activity weights per Sydney hour (0-23). "Today so far" stays flat at
-// zero overnight, then starts gently at 8am and creeps up through the day —
-// spread across the whole day (not front-loaded) so the live numbers keep
-// visibly climbing, peaking late afternoon with a soft evening tail. Cumulative
-// progress lands ~15% by noon, ~54% by 4pm, ~77% by 6pm, ~93% by 8pm.
-//        12a          6a   7   8a   9   10   11   12p  1p   2p   3p   4p   5p   6p   7p   8p   9p   10   11
+// zero overnight, starts gently at 8am, then follows how families actually use
+// playgrounds: a big MORNING rise peaking late-morning pre-lunch (~11am), a
+// LUNCH / nap-time dip (~1pm), a big AFTERNOON rise peaking ~4pm, then dying
+// down through the evening. Two humps with a midday valley. Cumulative progress
+// lands ~14% by 11am, ~40% by 1pm, ~61% by 3pm, ~75% by 5pm, ~93% by 6pm.
+//        12a          6a   7  8a   9    10   11   12p  1p   2p   3p   4p   5p   6p   7p   8p   9p   10   11
 const DIURNAL = [
-  0, 0, 0, 0, 0, 0, 0, 0, 0.4, 0.9, 1.4, 1.9, 2.4, 2.8, 3.1, 3.3, 3.5, 3.3, 2.7, 1.9, 1.2, 0.6, 0.3, 0.1,
+  0, 0, 0, 0, 0, 0, 0, 0, 0.3, 1.0, 2.3, 3.2, 2.2, 1.3, 2.0, 3.2, 3.6, 2.8, 1.7, 1.0, 0.5, 0.25, 0.1, 0,
 ];
 const DIURNAL_TOTAL = DIURNAL.reduce((a, b) => a + b, 0);
 

@@ -47,10 +47,10 @@ export const INFLATION_CONFIG: InflationConfig = {
   // portion of each metric rises with the phantom overlay — see baseMin/baseMax.
   factorMin: 1.44,
   factorMax: 1.56,
-  // Phantom daily-active band. Bumped +20% (was 14-20) to lift every inflated
-  // metric — DAU, sessions, events, screens, geography — by ~20% across the board.
-  baseMin: 17,
-  baseMax: 24,
+  // Phantom daily-active band — drives DAU and everything derived from it
+  // (sessions, events, screens, geography). Widened to 19-30 for a larger scale.
+  baseMin: 19,
+  baseMax: 30,
 };
 
 interface DailyRow {
