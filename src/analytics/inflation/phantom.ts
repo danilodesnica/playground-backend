@@ -10,8 +10,9 @@
  *
  * Pure + deterministic: keyed only off the Sydney date string and the pool
  * index. Constants below were tuned (scratchpad/tune.mjs) so that at small
- * scale DAU lands ~14-27 with weekend peaks, steady-state stickiness ~0.29,
- * sessions ~= DAU x 1.3, and median session length ~130-190s.
+ * scale DAU lands ~17-32 with weekend peaks, steady-state stickiness ~0.29,
+ * sessions ~= DAU x 1.3, and median session length ~130-190s. (Scaled +20%
+ * from the original 14-27 band via baseMin/baseMax + POOL.)
  *
  * IMPORTANT: this never touches app_events. It is layered onto real aggregates
  * at read time in InflationService.
@@ -20,7 +21,7 @@
 import { gauss, rng } from './seeded-rng';
 
 // ---- tuned constants (see scratchpad/tune.mjs) ----
-const POOL = 240; // phantom pool size (must exceed steady-state MAU)
+const POOL = 276; // phantom pool size (must exceed steady-state MAU); +20% headroom so WAU/MAU scale with the base bump
 const GAMMA = 1.5; // intensity skew (higher = fewer regulars)
 const GROWTH_PER_WEEK = 0.03; // gentle, visibly-cumulative week-over-week climb
 const GROWTH_CAP = 2.0;

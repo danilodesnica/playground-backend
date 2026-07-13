@@ -43,10 +43,14 @@ export const INFLATION_CONFIG: InflationConfig = {
   enabled: true, // <-- set to false to disable the Insights inflation overlay
   startDate: '2026-07-13', // from tomorrow onward only (today stays fully real)
   endDate: undefined, // set a 'YYYY-MM-DD' to freeze history and stop inflating newer days
-  factorMin: 1.2,
-  factorMax: 1.3,
-  baseMin: 14,
-  baseMax: 20,
+  // Band applied to the REAL numbers. Bumped +20% (was 1.2-1.3) so the real
+  // portion of each metric rises with the phantom overlay — see baseMin/baseMax.
+  factorMin: 1.44,
+  factorMax: 1.56,
+  // Phantom daily-active band. Bumped +20% (was 14-20) to lift every inflated
+  // metric — DAU, sessions, events, screens, geography — by ~20% across the board.
+  baseMin: 17,
+  baseMax: 24,
 };
 
 interface DailyRow {
