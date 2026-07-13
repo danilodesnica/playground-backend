@@ -13,6 +13,7 @@ import { SUPABASE_ADMIN, SUPABASE_CLIENT } from '../supabase/supabase.module';
 import { EventsBatchDto } from './dto/events-batch.dto';
 import {
   DauVersionRow,
+  GeoRow,
   InflationService,
   ScreenRow,
 } from './inflation/inflation.service';
@@ -253,7 +254,11 @@ export class AnalyticsService {
 
   async geo(from?: string, to?: string): Promise<unknown> {
     const range = resolveRange(from, to);
-    return this.rpc('analytics_geo', { p_from: range.from, p_to: range.to });
+    const rows = await this.rpc<GeoRow[]>('analytics_geo', {
+      p_from: range.from,
+      p_to: range.to,
+    });
+    return this.inflation.applyGeo(rows, range.from, range.to);
   }
 
   async topLocations(from?: string, to?: string): Promise<unknown> {

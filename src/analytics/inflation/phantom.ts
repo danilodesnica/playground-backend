@@ -154,6 +154,26 @@ export function phantomEngagement(ds: string, p: PhantomParams): PhantomEngageme
   };
 }
 
+/** Distinct phantom users + total sessions across an inclusive Sydney-day range. */
+export function phantomRangeTotals(
+  fromDs: string,
+  toDs: string,
+  p: PhantomParams,
+): { users: number; sessions: number } {
+  const start = Math.max(dayIndex(fromDs), dayIndex(p.startDate));
+  const end = dayIndex(toDs);
+  const users = new Set<number>();
+  let sessions = 0;
+  for (let di = start; di <= end; di++) {
+    const ds = new Date(di * DAY_MS).toISOString().slice(0, 10);
+    for (const u of activeSet(ds, p)) {
+      users.add(u);
+      sessions += userDaySessions(u, ds).length;
+    }
+  }
+  return { users: users.size, sessions };
+}
+
 /** Phantom screen views + distinct users across an inclusive Sydney-day range. */
 export function phantomScreensRange(
   fromDs: string,

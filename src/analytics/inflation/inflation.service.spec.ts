@@ -106,4 +106,24 @@ describe('InflationService', () => {
     expect(today.sessions).toBe(overview.sessions);
     expect(today.events).toBe(overview.events);
   });
+
+  it('inflates geography with a Sydney-led spread, keeping real rows', () => {
+    const svc = InflationService.withConfig({ startDate: '2020-01-01' });
+    const real = [{ country: 'AU', region: 'NSW', city: '', uniq_users: 1, sessions: 2 }];
+    const out = svc.applyGeo(real, '2020-05-01', '2020-06-01');
+    expect(out.length).toBeGreaterThan(4); // many phantom cities added
+    expect(out[0].city).toBe('Sydney'); // most-weighted, tops the sorted list
+    expect(out.reduce((s, r) => s + r.uniq_users, 0)).toBeGreaterThan(15);
+    // the real "" row is preserved (not overwritten by phantom cities)
+    expect(out.some((r) => r.city === '' && r.uniq_users === 1)).toBe(true);
+    // sessions >= users per row
+    expect(out.every((r) => r.sessions >= r.uniq_users)).toBe(true);
+  });
+
+  it('does not inflate geo when disabled', () => {
+    const real = [{ country: 'AU', region: 'NSW', city: 'Sydney', uniq_users: 3, sessions: 4 }];
+    expect(InflationService.withConfig({ enabled: false }).applyGeo(real, '2020-05-01', '2020-06-01')).toEqual(
+      real,
+    );
+  });
 });

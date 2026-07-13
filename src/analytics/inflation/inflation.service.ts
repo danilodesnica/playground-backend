@@ -4,6 +4,7 @@ import {
   addDays,
   phantomDay,
   phantomEngagement,
+  phantomRangeTotals,
   phantomScreensRange,
   PhantomParams,
 } from './phantom';
@@ -72,6 +73,13 @@ export interface DauVersionRow {
   day: string;
   app_version: string;
   dau: number;
+}
+export interface GeoRow {
+  country: string;
+  region: string;
+  city: string;
+  uniq_users: number;
+  sessions: number;
 }
 
 @Injectable()
@@ -256,4 +264,87 @@ export class InflationService {
     }
     return out;
   }
+
+  // ---- geography (IP-derived, over a range) ----
+  applyGeo(rows: GeoRow[], from: string, to: string): GeoRow[] {
+    if (!this.enabled) return rows;
+    const cap = this.sydneyYesterday();
+    const fromInfl = from > this.startDate ? from : this.startDate;
+    const toInfl = to < cap ? to : cap;
+    const toClamped = this.endDate && this.endDate <= toInfl ? addDays(this.endDate, -1) : toInfl;
+    if (fromInfl > toClamped) return rows;
+
+    const { users, sessions } = phantomRangeTotals(fromInfl, toClamped, this.params);
+    if (users <= 0) return rows;
+
+    const keyOf = (r: { country: string; region: string; city: string }) =>
+      `${r.country}|${r.region}|${r.city}`;
+    const merged = new Map<string, GeoRow>();
+    for (const r of rows) {
+      merged.set(keyOf(r), {
+        country: r.country,
+        region: r.region,
+        city: r.city,
+        uniq_users: Number(r.uniq_users) || 0,
+        sessions: Number(r.sessions) || 0,
+      });
+    }
+    for (const g of distributeGeo(users, sessions)) {
+      const existing = merged.get(keyOf(g));
+      if (existing) {
+        existing.uniq_users += g.uniq_users;
+        existing.sessions += g.sessions;
+      } else {
+        merged.set(keyOf(g), g);
+      }
+    }
+    return [...merged.values()].sort((a, b) => b.uniq_users - a.uniq_users).slice(0, 100);
+  }
+}
+
+/**
+ * Weighted Sydney-area location spread for phantom users (family-outings app →
+ * NSW/Sydney-metro heavy, with a light interstate tail). Country/region/city
+ * mirror the shape real fast-geoip enrichment would produce (AU / NSW / city).
+ */
+const GEO_DIST: Array<{ country: string; region: string; city: string; weight: number }> = [
+  { country: 'AU', region: 'NSW', city: 'Sydney', weight: 34 },
+  { country: 'AU', region: 'NSW', city: 'Parramatta', weight: 10 },
+  { country: 'AU', region: 'NSW', city: 'Penrith', weight: 7 },
+  { country: 'AU', region: 'NSW', city: 'Liverpool', weight: 6 },
+  { country: 'AU', region: 'NSW', city: 'Blacktown', weight: 6 },
+  { country: 'AU', region: 'NSW', city: 'Sutherland', weight: 5 },
+  { country: 'AU', region: 'NSW', city: 'Newcastle', weight: 4 },
+  { country: 'AU', region: 'NSW', city: 'Hornsby', weight: 4 },
+  { country: 'AU', region: 'NSW', city: 'Chatswood', weight: 4 },
+  { country: 'AU', region: 'NSW', city: 'Manly', weight: 3 },
+  { country: 'AU', region: 'NSW', city: 'Cronulla', weight: 3 },
+  { country: 'AU', region: 'NSW', city: 'Bondi Junction', weight: 3 },
+  { country: 'AU', region: 'NSW', city: 'Wollongong', weight: 3 },
+  { country: 'AU', region: 'NSW', city: 'Gosford', weight: 2 },
+  { country: 'AU', region: 'VIC', city: 'Melbourne', weight: 2 },
+  { country: 'AU', region: 'QLD', city: 'Brisbane', weight: 2 },
+];
+
+/** Allocate `totalUsers` across GEO_DIST by weight (largest-remainder rounding). */
+function distributeGeo(totalUsers: number, totalSessions: number): GeoRow[] {
+  const sumW = GEO_DIST.reduce((s, g) => s + g.weight, 0);
+  const rows = GEO_DIST.map((g) => {
+    const exact = (totalUsers * g.weight) / sumW;
+    const floor = Math.floor(exact);
+    return { ...g, u: floor, rem: exact - floor };
+  });
+  let remaining = totalUsers - rows.reduce((s, r) => s + r.u, 0);
+  rows.sort((a, b) => b.rem - a.rem);
+  for (let i = 0; remaining > 0 && rows.length > 0; i++, remaining--) rows[i % rows.length].u += 1;
+  const perUser = totalUsers > 0 ? totalSessions / totalUsers : 1.3;
+  return rows
+    .filter((r) => r.u > 0)
+    .map((r) => ({
+      country: r.country,
+      region: r.region,
+      city: r.city,
+      uniq_users: r.u,
+      sessions: Math.max(r.u, Math.round(r.u * perUser)),
+    }));
 }
