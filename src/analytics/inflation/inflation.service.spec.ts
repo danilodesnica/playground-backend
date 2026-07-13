@@ -76,7 +76,7 @@ describe('InflationService', () => {
 
   it('inflates live today counts (no yesterday cap) and is a no-op when disabled/pre-start', () => {
     const on = InflationService.withConfig({ startDate: '2020-01-01' });
-    const out = on.applyToday({ active_users: 2, sessions: 3, events: 105 }, DAY);
+    const out = on.applyToday({ active_users: 2, sessions: 3, events: 105 }, DAY, 1);
     expect(out.active_users).toBeGreaterThan(2);
     expect(out.sessions).toBeGreaterThan(3);
     expect(out.events).toBeGreaterThan(105);
@@ -96,15 +96,30 @@ describe('InflationService', () => {
     ).toEqual({ active_users: 2, sessions: 3, events: 105 });
   });
 
-  it("today's inflated counts equal the same day's completed-day (overview) form", () => {
+  it("today's inflated counts (full day) equal the same day's completed-day form", () => {
     const svc = InflationService.withConfig({ startDate: '2020-01-01' });
-    const today = svc.applyToday({ active_users: 3, sessions: 4, events: 20 }, DAY);
+    // progress = 1 → end-of-day; must match the completed-day (past DAY) form.
+    const today = svc.applyToday({ active_users: 3, sessions: 4, events: 20 }, DAY, 1);
     const [overview] = svc.applyOverview([
       { day: DAY, dau: 3, new_users: 0, sessions: 4, events: 20, avg_session_secs: 0 },
     ]);
     expect(today.active_users).toBe(overview.dau);
     expect(today.sessions).toBe(overview.sessions);
     expect(today.events).toBe(overview.events);
+  });
+
+  it('ramps today by intraday progress — near-zero overnight, full by end of day', () => {
+    const svc = InflationService.withConfig({ startDate: '2020-01-01' });
+    const real = { active_users: 2, sessions: 3, events: 100 };
+    const at0 = svc.applyToday(real, DAY, 0); // Sydney midnight
+    const atMid = svc.applyToday(real, DAY, 0.5);
+    const atFull = svc.applyToday(real, DAY, 1); // end of day
+    // progress 0 → only the real bump, no phantom yet
+    expect(at0.active_users).toBeLessThanOrEqual(3);
+    // strictly increasing with the day
+    expect(at0.active_users).toBeLessThan(atMid.active_users);
+    expect(atMid.active_users).toBeLessThan(atFull.active_users);
+    expect(at0.events).toBeLessThan(atFull.events);
   });
 
   it('inflates geography with a Sydney-led spread, keeping real rows', () => {

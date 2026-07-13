@@ -22,8 +22,8 @@ import { gauss, rng } from './seeded-rng';
 // ---- tuned constants (see scratchpad/tune.mjs) ----
 const POOL = 240; // phantom pool size (must exceed steady-state MAU)
 const GAMMA = 1.5; // intensity skew (higher = fewer regulars)
-const GROWTH_PER_WEEK = 0.02;
-const GROWTH_CAP = 1.6;
+const GROWTH_PER_WEEK = 0.03; // gentle, visibly-cumulative week-over-week climb
+const GROWTH_CAP = 2.0;
 const RETENTION_MIX = 0.32; // weight on stable intensity vs daily noise
 const SEASONALITY: Record<number, number> = {
   0: 1.28, // Sun
@@ -152,6 +152,26 @@ export function phantomEngagement(ds: string, p: PhantomParams): PhantomEngageme
     wau: windowUnion(ds, 7, p).size,
     mau: windowUnion(ds, 30, p).size,
   };
+}
+
+// Diurnal activity weights per Sydney hour (0-23): people use a family-outings
+// app in the daytime, concentrated ~9am-6pm with a small evening tail. Used to
+// ramp "today so far" through the day instead of showing the full day's total
+// from midnight.
+const DIURNAL = [
+  0, 0, 0, 0, 0, 0, 0, 0.2, 0.6, 1.5, 2.5, 3.0, 3.5, 3.4, 3.3, 3.6, 3.8, 3.4, 2.4, 1.4, 0.8, 0.4, 0.1, 0,
+];
+const DIURNAL_TOTAL = DIURNAL.reduce((a, b) => a + b, 0);
+
+/** Fraction (0-1) of a day's activity that has occurred by Sydney fractional hour `fh`. */
+export function dayProgress(fh: number): number {
+  if (fh <= 0) return 0;
+  if (fh >= 24) return 1;
+  const h = Math.floor(fh);
+  let acc = 0;
+  for (let i = 0; i < h; i++) acc += DIURNAL[i];
+  acc += DIURNAL[h] * (fh - h);
+  return Math.min(1, acc / DIURNAL_TOTAL);
 }
 
 /** Distinct phantom users + total sessions across an inclusive Sydney-day range. */

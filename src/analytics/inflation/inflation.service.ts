@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { rng } from './seeded-rng';
 import {
   addDays,
+  dayProgress,
   phantomDay,
   phantomEngagement,
   phantomRangeTotals,
@@ -130,6 +131,24 @@ export class InflationService {
     return new Date().toLocaleDateString('en-CA', { timeZone: 'Australia/Sydney' });
   }
 
+  /** Current Sydney time as a fractional hour (0-24). */
+  private sydneyFractionalHourNow(): number {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Australia/Sydney',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).formatToParts(new Date());
+    const h = Number(parts.find((p) => p.type === 'hour')?.value ?? '0') % 24;
+    const m = Number(parts.find((p) => p.type === 'minute')?.value ?? '0');
+    return h + m / 60;
+  }
+
+  /** Fraction (0-1) of TODAY's activity that has happened by now (Sydney), for the intraday ramp. */
+  private dayProgressNow(): number {
+    return dayProgress(this.sydneyFractionalHourNow());
+  }
+
   private inflatable(ds: string, cap: string): boolean {
     return (
       this.enabled &&
@@ -148,22 +167,26 @@ export class InflationService {
   applyOverview(daily: DailyRow[]): DailyRow[] {
     if (!this.enabled) return daily;
     const cap = this.sydneyToday();
+    const progress = this.dayProgressNow();
     return daily.map((row) => {
       if (!this.inflatable(row.day, cap)) return row;
+      // Today's (incomplete) row ramps by intraday progress; completed days are full.
+      const w = row.day === cap ? progress : 1;
       const ph = phantomDay(row.day, this.params);
       const f = this.factor(row.day);
       const realSessions = Number(row.sessions) || 0;
       const realMedian = Number(row.avg_session_secs) || 0;
-      const totalSessions = realSessions + ph.sessions;
+      const phSessions = ph.sessions * w;
+      const totalSessions = realSessions + phSessions;
       return {
         ...row,
-        dau: Math.round((Number(row.dau) || 0) * f + ph.dau),
-        sessions: Math.round(realSessions * f + ph.sessions),
-        events: Math.round((Number(row.events) || 0) * f + ph.events),
+        dau: Math.round((Number(row.dau) || 0) * f + ph.dau * w),
+        sessions: Math.round(realSessions * f + phSessions),
+        events: Math.round((Number(row.events) || 0) * f + ph.events * w),
         // new_users (signups) intentionally left real
         avg_session_secs:
           totalSessions > 0
-            ? Math.round((realMedian * realSessions + ph.medianSecs * ph.sessions) / totalSessions)
+            ? Math.round((realMedian * realSessions + ph.medianSecs * phSessions) / totalSessions)
             : realMedian,
       };
     });
@@ -187,13 +210,16 @@ export class InflationService {
   }
 
   // ---- today (live current-day counts) ----
-  // Unlike the completed-day paths there is NO "yesterday" cap here: we
-  // deliberately inflate the CURRENT day using the exact same per-day transform
-  // as applyOverview, so the live "Today so far" number equals what this day
-  // becomes as "yesterday" tomorrow (the phantom is deterministic per date).
+  // No "yesterday" cap here — we inflate the CURRENT day, but ramp the phantom
+  // contribution by the intraday progress (near 0 overnight, rising ~9am-6pm
+  // Sydney) so the live "Today so far" number builds through the day instead of
+  // showing the full total at midnight. By end of the Sydney day progress -> 1,
+  // so it converges to exactly what this day becomes as "yesterday" tomorrow
+  // (the phantom is deterministic per date). `progress` is injectable for tests.
   applyToday(
     counts: { active_users: number; sessions: number; events: number },
     date: string,
+    progress: number = this.dayProgressNow(),
   ): { active_users: number; sessions: number; events: number } {
     if (!this.enabled || date < this.startDate || (this.endDate && date >= this.endDate)) {
       return counts;
@@ -201,9 +227,9 @@ export class InflationService {
     const ph = phantomDay(date, this.params);
     const f = this.factor(date);
     return {
-      active_users: Math.round((Number(counts.active_users) || 0) * f + ph.dau),
-      sessions: Math.round((Number(counts.sessions) || 0) * f + ph.sessions),
-      events: Math.round((Number(counts.events) || 0) * f + ph.events),
+      active_users: Math.round((Number(counts.active_users) || 0) * f + ph.dau * progress),
+      sessions: Math.round((Number(counts.sessions) || 0) * f + ph.sessions * progress),
+      events: Math.round((Number(counts.events) || 0) * f + ph.events * progress),
     };
   }
 
