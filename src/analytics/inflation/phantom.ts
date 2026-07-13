@@ -154,12 +154,14 @@ export function phantomEngagement(ds: string, p: PhantomParams): PhantomEngageme
   };
 }
 
-// Diurnal activity weights per Sydney hour (0-23): people use a family-outings
-// app in the daytime, concentrated ~9am-6pm with a small evening tail. Used to
-// ramp "today so far" through the day instead of showing the full day's total
-// from midnight.
+// Diurnal activity weights per Sydney hour (0-23). "Today so far" stays flat at
+// zero overnight, then starts gently at 8am and creeps up through the day —
+// spread across the whole day (not front-loaded) so the live numbers keep
+// visibly climbing, peaking late afternoon with a soft evening tail. Cumulative
+// progress lands ~15% by noon, ~54% by 4pm, ~77% by 6pm, ~93% by 8pm.
+//        12a          6a   7   8a   9   10   11   12p  1p   2p   3p   4p   5p   6p   7p   8p   9p   10   11
 const DIURNAL = [
-  0, 0, 0, 0, 0, 0, 0, 0.2, 0.6, 1.5, 2.5, 3.0, 3.5, 3.4, 3.3, 3.6, 3.8, 3.4, 2.4, 1.4, 0.8, 0.4, 0.1, 0,
+  0, 0, 0, 0, 0, 0, 0, 0, 0.4, 0.9, 1.4, 1.9, 2.4, 2.8, 3.1, 3.3, 3.5, 3.3, 2.7, 1.9, 1.2, 0.6, 0.3, 0.1,
 ];
 const DIURNAL_TOTAL = DIURNAL.reduce((a, b) => a + b, 0);
 
