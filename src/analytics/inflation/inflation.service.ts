@@ -125,10 +125,9 @@ export class InflationService {
     return this.enabled;
   }
 
-  /** Last full Sydney day — the newest day we ever inflate (today is partial). */
-  private sydneyYesterday(): string {
-    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Australia/Sydney' });
-    return addDays(today, -1);
+  /** Current Sydney day (YYYY-MM-DD) — the newest day the overlay inflates. */
+  private sydneyToday(): string {
+    return new Date().toLocaleDateString('en-CA', { timeZone: 'Australia/Sydney' });
   }
 
   private inflatable(ds: string, cap: string): boolean {
@@ -148,7 +147,7 @@ export class InflationService {
   // ---- overview (per-day time series) ----
   applyOverview(daily: DailyRow[]): DailyRow[] {
     if (!this.enabled) return daily;
-    const cap = this.sydneyYesterday();
+    const cap = this.sydneyToday();
     return daily.map((row) => {
       if (!this.inflatable(row.day, cap)) return row;
       const ph = phantomDay(row.day, this.params);
@@ -172,8 +171,9 @@ export class InflationService {
 
   // ---- engagement (DAU/WAU/MAU/stickiness scalars) ----
   applyEngagement(row: EngagementRow, rangeTo: string): EngagementRow {
-    const cap = this.sydneyYesterday();
-    // The RPC anchors on LEAST(p_to, Sydney yesterday); match it here.
+    // DAU is defined as "yesterday" — anchor on LEAST(p_to, Sydney yesterday),
+    // even though the per-day charts and the live strip now inflate through today.
+    const cap = addDays(this.sydneyToday(), -1);
     const anchor = rangeTo < cap ? rangeTo : cap;
     if (!this.inflatable(anchor, cap)) return row;
     const ph = phantomEngagement(anchor, this.params);
@@ -210,7 +210,7 @@ export class InflationService {
   // ---- screens (per-screen totals over a range) ----
   applyScreens(rows: ScreenRow[], from: string, to: string): ScreenRow[] {
     if (!this.enabled || rows.length === 0) return rows;
-    const cap = this.sydneyYesterday();
+    const cap = this.sydneyToday();
     const fromInfl = from > this.startDate ? from : this.startDate;
     const toInfl = to < cap ? to : cap;
     const toClamped = this.endDate && this.endDate <= toInfl ? addDays(this.endDate, -1) : toInfl;
@@ -239,7 +239,7 @@ export class InflationService {
   // ---- DAU by version (per-day, per-version) ----
   applyDauByVersion(rows: DauVersionRow[]): DauVersionRow[] {
     if (!this.enabled || rows.length === 0) return rows;
-    const cap = this.sydneyYesterday();
+    const cap = this.sydneyToday();
 
     // group indices by day so we can add phantom DAU to the dominant version
     const byDay = new Map<string, number[]>();
@@ -268,7 +268,7 @@ export class InflationService {
   // ---- geography (IP-derived, over a range) ----
   applyGeo(rows: GeoRow[], from: string, to: string): GeoRow[] {
     if (!this.enabled) return rows;
-    const cap = this.sydneyYesterday();
+    const cap = this.sydneyToday();
     const fromInfl = from > this.startDate ? from : this.startDate;
     const toInfl = to < cap ? to : cap;
     const toClamped = this.endDate && this.endDate <= toInfl ? addDays(this.endDate, -1) : toInfl;

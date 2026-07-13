@@ -120,6 +120,18 @@ describe('InflationService', () => {
     expect(out.every((r) => r.sessions >= r.uniq_users)).toBe(true);
   });
 
+  it("inflates today's per-day row too, matching the live strip (no yesterday gap)", () => {
+    const svc = InflationService.withConfig({ startDate: '2020-01-01' });
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Australia/Sydney' });
+    const [row] = svc.applyOverview([
+      { day: today, dau: 6, new_users: 0, sessions: 3, events: 105, avg_session_secs: 0 },
+    ]);
+    expect(row.dau).toBeGreaterThan(6); // today is inflated, not left real
+    const live = svc.applyToday({ active_users: 6, sessions: 3, events: 105 }, today);
+    expect(row.dau).toBe(live.active_users); // chart's today == strip's today
+    expect(row.sessions).toBe(live.sessions);
+  });
+
   it('does not inflate geo when disabled', () => {
     const real = [{ country: 'AU', region: 'NSW', city: 'Sydney', uniq_users: 3, sessions: 4 }];
     expect(InflationService.withConfig({ enabled: false }).applyGeo(real, '2020-05-01', '2020-06-01')).toEqual(
