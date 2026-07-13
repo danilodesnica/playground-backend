@@ -156,14 +156,15 @@ export function phantomEngagement(ds: string, p: PhantomParams): PhantomEngageme
 }
 
 // Diurnal activity weights per Sydney hour (0-23). "Today so far" stays flat at
-// zero overnight, starts gently at 8am, then follows how families actually use
-// playgrounds: a big MORNING rise peaking late-morning pre-lunch (~11am), a
-// LUNCH / nap-time dip (~1pm), a big AFTERNOON rise peaking ~4pm, then dying
-// down through the evening. Two humps with a midday valley. Cumulative progress
-// lands ~14% by 11am, ~40% by 1pm, ~61% by 3pm, ~75% by 5pm, ~93% by 6pm.
-//        12a          6a   7  8a   9    10   11   12p  1p   2p   3p   4p   5p   6p   7p   8p   9p   10   11
+// zero overnight, then activity from 8am is MORNING-DOMINANT: a strong rise from
+// 8am peaking late-morning pre-lunch (~11am), a lunch / nap-time dip (~1pm), a
+// smaller AFTERNOON bump (~3-4pm), then dying down through the evening. Mornings
+// are the busy stretch (~46% of the day's activity by noon) and the morning peak
+// is ~1.8x the afternoon bump — 8am already shows a live number, not zero.
+// Cumulative progress lands ~16% by 10am, ~46% by noon, ~78% by 3pm, ~87% by 6pm.
+//        12a          6a   7  8a   9    10   11   12p  1p   2p   3p   4p   5p   6p   7p   8p   9p    10    11
 const DIURNAL = [
-  0, 0, 0, 0, 0, 0, 0, 0, 0.3, 1.0, 2.3, 3.2, 2.2, 1.3, 2.0, 3.2, 3.6, 2.8, 1.7, 1.0, 0.5, 0.25, 0.1, 0,
+  0, 0, 0, 0, 0, 0, 0, 0, 1.5, 3.0, 4.0, 4.5, 3.2, 1.6, 1.9, 2.5, 2.4, 1.7, 1.0, 0.6, 0.3, 0.15, 0.05, 0,
 ];
 const DIURNAL_TOTAL = DIURNAL.reduce((a, b) => a + b, 0);
 
