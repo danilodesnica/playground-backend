@@ -73,4 +73,37 @@ describe('InflationService', () => {
     const svc = new InflationService();
     expect(svc.isEnabled).toBe(true);
   });
+
+  it('inflates live today counts (no yesterday cap) and is a no-op when disabled/pre-start', () => {
+    const on = InflationService.withConfig({ startDate: '2020-01-01' });
+    const out = on.applyToday({ active_users: 2, sessions: 3, events: 105 }, DAY);
+    expect(out.active_users).toBeGreaterThan(2);
+    expect(out.sessions).toBeGreaterThan(3);
+    expect(out.events).toBeGreaterThan(105);
+
+    expect(
+      InflationService.withConfig({ enabled: false }).applyToday(
+        { active_users: 2, sessions: 3, events: 105 },
+        DAY,
+      ),
+    ).toEqual({ active_users: 2, sessions: 3, events: 105 });
+
+    expect(
+      InflationService.withConfig({ startDate: '2020-07-01' }).applyToday(
+        { active_users: 2, sessions: 3, events: 105 },
+        '2020-06-15',
+      ),
+    ).toEqual({ active_users: 2, sessions: 3, events: 105 });
+  });
+
+  it("today's inflated counts equal the same day's completed-day (overview) form", () => {
+    const svc = InflationService.withConfig({ startDate: '2020-01-01' });
+    const today = svc.applyToday({ active_users: 3, sessions: 4, events: 20 }, DAY);
+    const [overview] = svc.applyOverview([
+      { day: DAY, dau: 3, new_users: 0, sessions: 4, events: 20, avg_session_secs: 0 },
+    ]);
+    expect(today.active_users).toBe(overview.dau);
+    expect(today.sessions).toBe(overview.sessions);
+    expect(today.events).toBe(overview.events);
+  });
 });

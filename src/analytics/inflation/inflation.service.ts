@@ -178,6 +178,27 @@ export class InflationService {
     return { dau_yesterday: dau, wau, mau, stickiness };
   }
 
+  // ---- today (live current-day counts) ----
+  // Unlike the completed-day paths there is NO "yesterday" cap here: we
+  // deliberately inflate the CURRENT day using the exact same per-day transform
+  // as applyOverview, so the live "Today so far" number equals what this day
+  // becomes as "yesterday" tomorrow (the phantom is deterministic per date).
+  applyToday(
+    counts: { active_users: number; sessions: number; events: number },
+    date: string,
+  ): { active_users: number; sessions: number; events: number } {
+    if (!this.enabled || date < this.startDate || (this.endDate && date >= this.endDate)) {
+      return counts;
+    }
+    const ph = phantomDay(date, this.params);
+    const f = this.factor(date);
+    return {
+      active_users: Math.round((Number(counts.active_users) || 0) * f + ph.dau),
+      sessions: Math.round((Number(counts.sessions) || 0) * f + ph.sessions),
+      events: Math.round((Number(counts.events) || 0) * f + ph.events),
+    };
+  }
+
   // ---- screens (per-screen totals over a range) ----
   applyScreens(rows: ScreenRow[], from: string, to: string): ScreenRow[] {
     if (!this.enabled || rows.length === 0) return rows;

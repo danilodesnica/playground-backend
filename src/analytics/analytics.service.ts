@@ -383,7 +383,13 @@ export class AnalyticsService {
       if (!lastEventAt || r.received_at > lastEventAt) lastEventAt = r.received_at;
     }
 
-    return { date, active_users: users.size, sessions: sessions.size, events, last_event_at: lastEventAt };
+    // Inflate the live current-day counts with the same per-day transform used
+    // for completed days, so today's number matches its "yesterday" form tomorrow.
+    const inflated = this.inflation.applyToday(
+      { active_users: users.size, sessions: sessions.size, events },
+      date,
+    );
+    return { date, ...inflated, last_event_at: lastEventAt };
   }
 
   /** Per-day DAU split by app version (pixel). */
