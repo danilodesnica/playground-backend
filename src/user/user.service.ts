@@ -79,6 +79,21 @@ export class UserService {
       }
     }
 
+    // Home postcode. Kept deliberately separate from the coverage check signup
+    // runs: a member moving out of a serviced area should still be able to
+    // correct their address, and the app decides what to show them from it.
+    if (input.postCode !== undefined) {
+      const { error: codeErr } = await this.admin
+        .from('users')
+        .update({ code: input.postCode })
+        .eq('id', targetId);
+      if (codeErr) {
+        throw new InternalServerErrorException(
+          `Failed to update postcode: ${codeErr.message}`,
+        );
+      }
+    }
+
     return this.getProfile(targetId);
   }
 
