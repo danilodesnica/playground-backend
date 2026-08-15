@@ -1,4 +1,14 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { AdminAuthGuard } from '../auth/admin-auth.guard';
 import { CreateLocationDto } from './dto/create-location.dto';
 import { UpdateLocationDto } from './dto/update-location.dto';
@@ -31,5 +41,12 @@ export class AdminLocationsController {
     @Body() body: UpdateLocationDto,
   ): Promise<LocationListItem> {
     return this.locations.updateLocation(id, body);
+  }
+
+  @Delete('location/:id')
+  async remove(
+    @Param('id', new ParseUUIDPipe()) id: string,
+  ): Promise<{ success: true; removed: { reviews: number; saves: number } }> {
+    return this.locations.deleteLocation(id);
   }
 }

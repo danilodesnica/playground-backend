@@ -428,4 +428,68 @@ export class LocationsService {
 
     return toLocationListItem(data);
   }
+
+  /**
+   * Admin — delete a location and the rows that only exist because of it.
+   *
+   * `reviews` and `saved_location` hold plain foreign keys with no ON DELETE
+   * rule, so Postgres refuses to remove a location anything points at. Both are
+   * meaningless once the place is gone — a saved reference to nothing, a review
+   * of nothing — so they are cleared first, and the counts come back so the
+   * admin can be told what went with it.
+   *
+   * `user_interaction` cascades on its own. `app_events` keeps location_id
+   * inside a JSON column with no constraint, so the analytics history is left
+   * exactly as it was: those events did happen.
+   */
+  async deleteLocation(id: string): Promise<{
+    success: true;
+    removed: { reviews: number; saves: number };
+  }> {
+    const existing = await this.admin
+      .from('location')
+      .select('id')
+      .eq('id', id)
+      .maybeSingle();
+    if (existing.error) {
+      throw new InternalServerErrorException(
+        `Failed to look up location: ${existing.error.message}`,
+      );
+    }
+    if (!existing.data) {
+      throw new NotFoundException(`Location ${id} not found`);
+    }
+
+    const { data: killedReviews, error: reviewErr } = await this.admin
+      .from('reviews')
+      .delete()
+      .eq('location_id', id)
+      .select('id');
+    if (reviewErr) {
+      throw new InternalServerErrorException(
+        `Failed to remove reviews for the location: ${reviewErr.message}`,
+      );
+    }
+
+    const { data: killedSaves, error: savedErr } = await this.admin
+      .from('saved_location')
+      .delete()
+      .eq('location_id', id)
+      .select('id');
+    if (savedErr) {
+      throw new InternalServerErrorException(
+        `Failed to remove saves for the location: ${savedErr.message}`,
+      );
+    }
+
+    const { error } = await this.admin.from('location').delete().eq('id', id);
+    if (error) {
+      throw new InternalServerErrorException(`Failed to delete location: ${error.message}`);
+    }
+
+    return {
+      success: true,
+      removed: { reviews: killedReviews?.length ?? 0, saves: killedSaves?.length ?? 0 },
+    };
+  }
 }

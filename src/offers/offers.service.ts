@@ -160,4 +160,39 @@ export class OffersService {
 
     return toOfferDto(data);
   }
+
+  /**
+   * Admin — delete an offer, clearing the saves that point at it first for the
+   * same reason locations do: saved_offers carries a plain foreign key with no
+   * ON DELETE rule, so the delete is refused while any remain.
+   */
+  async deleteOffer(id: number): Promise<{ success: true; removed: { saves: number } }> {
+    const existing = await this.admin.from('offers').select('id').eq('id', id).maybeSingle();
+    if (existing.error) {
+      throw new InternalServerErrorException(
+        `Failed to look up offer: ${existing.error.message}`,
+      );
+    }
+    if (!existing.data) {
+      throw new NotFoundException(`Offer ${id} not found`);
+    }
+
+    const { data: killedSaves, error: savedErr } = await this.admin
+      .from('saved_offers')
+      .delete()
+      .eq('offers_id', id)
+      .select('id');
+    if (savedErr) {
+      throw new InternalServerErrorException(
+        `Failed to remove saves for the offer: ${savedErr.message}`,
+      );
+    }
+
+    const { error } = await this.admin.from('offers').delete().eq('id', id);
+    if (error) {
+      throw new InternalServerErrorException(`Failed to delete offer: ${error.message}`);
+    }
+
+    return { success: true, removed: { saves: killedSaves?.length ?? 0 } };
+  }
 }

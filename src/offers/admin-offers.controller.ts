@@ -1,4 +1,14 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  ParseIntPipe,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { AdminAuthGuard } from '../auth/admin-auth.guard';
 import { CreateOfferDto } from './dto/create-offer.dto';
 import { UpdateOfferDto } from './dto/update-offer.dto';
@@ -31,5 +41,12 @@ export class AdminOffersController {
     @Body() body: UpdateOfferDto,
   ): Promise<OfferDto> {
     return this.offers.updateOffer(id, body);
+  }
+
+  @Delete('offer/:id')
+  async remove(
+    @Param('id', ParseIntPipe) id: number,
+  ): Promise<{ success: true; removed: { saves: number } }> {
+    return this.offers.deleteOffer(id);
   }
 }
