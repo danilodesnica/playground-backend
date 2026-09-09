@@ -150,7 +150,7 @@ export class AuthService {
       sgMail.setApiKey(apiKey);
       await sgMail.send({
         to: email,
-        from: { email: fromEmail, name: fromName ?? 'Playtime' },
+        from: { email: fromEmail, name: fromName ?? 'Ask Andee' },
         templateId,
         dynamicTemplateData: { resetPasswordLink: data.properties.action_link },
       });
