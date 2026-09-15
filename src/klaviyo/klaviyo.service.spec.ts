@@ -50,3 +50,24 @@ describe('Klaviyo helpers', () => {
     expect(chunks([], 2)).toEqual([]);
   });
 });
+
+import { KlaviyoError } from './klaviyo.service';
+
+describe('KlaviyoError.refusedIndex', () => {
+  const body = (pointer: string, detail = 'backdated consent date is before current unsubscription date') =>
+    JSON.stringify({ errors: [{ status: 400, code: 'invalid', detail, source: { pointer } }] });
+
+  it('finds the profile Klaviyo objected to', () => {
+    const err = new KlaviyoError('POST', 'u', 400, body('/data/attributes/profiles/data/37/attributes/subscriptions'));
+    expect(err.refusedIndex()).toEqual({
+      index: 37,
+      reason: 'backdated consent date is before current unsubscription date',
+    });
+  });
+
+  it('returns null for errors that are not about one profile', () => {
+    expect(new KlaviyoError('POST', 'u', 400, body('/data/attributes/custom_source')).refusedIndex()).toBeNull();
+    expect(new KlaviyoError('POST', 'u', 429, '').refusedIndex()).toBeNull();
+    expect(new KlaviyoError('POST', 'u', 400, 'not json').refusedIndex()).toBeNull();
+  });
+});

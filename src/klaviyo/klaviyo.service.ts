@@ -55,8 +55,20 @@ export class KlaviyoService implements OnModuleInit, OnModuleDestroy {
   private timer: NodeJS.Timeout | null = null;
   private bootTimer: NodeJS.Timeout | null = null;
   private reconciling = false;
-  private lastRun: { at: string; users: number; inList: number; subscribed: number; error?: string } | null =
-    null;
+  /**
+   * Emails Klaviyo refused to backdate — people who unsubscribed from an
+   * earlier list. They are not on this list and must not be put back on it,
+   * so they would otherwise show up as "missing" on every pass.
+   */
+  private readonly refused = new Map<string, string>();
+  private lastRun: {
+    at: string;
+    users: number;
+    inList: number;
+    subscribed: number;
+    refused: number;
+    error?: string;
+  } | null = null;
 
   constructor(
     private readonly config: ConfigService,
@@ -73,7 +85,13 @@ export class KlaviyoService implements OnModuleInit, OnModuleDestroy {
   }
 
   get status() {
-    return { enabled: this.enabled, listId: this.listId, intervalMinutes: this.intervalMs / 60_000, lastRun: this.lastRun };
+    return {
+      enabled: this.enabled,
+      listId: this.listId,
+      intervalMinutes: this.intervalMs / 60_000,
+      lastRun: this.lastRun,
+      refused: Object.fromEntries(this.refused),
+    };
   }
 
   onModuleInit() {
@@ -146,18 +164,29 @@ export class KlaviyoService implements OnModuleInit, OnModuleDestroy {
     const at = new Date().toISOString();
     try {
       const [users, inList] = await Promise.all([this.allUsers(), this.listEmails()]);
-      const missing = users.filter((u) => !inList.has(normaliseEmail(u.email)));
-      this.log.log(`reconcile: ${users.length} accounts, ${inList.size} in list, ${missing.length} to add`);
+      const missing = users.filter((u) => {
+        const e = normaliseEmail(u.email);
+        return !inList.has(e) && !this.refused.has(e);
+      });
+      this.log.log(
+        `reconcile: ${users.length} accounts, ${inList.size} in list, ${this.refused.size} refused earlier, ${missing.length} to add`,
+      );
 
+      let subscribed = 0;
       if (missing.length) {
         for (const chunk of chunks(missing, IMPORT_BATCH)) await this.bulkImport(chunk);
-        for (const chunk of chunks(missing, SUBSCRIBE_BATCH)) await this.subscribe(chunk, { historical: true });
+        for (const chunk of chunks(missing, SUBSCRIBE_BATCH)) {
+          subscribed += await this.subscribeHistorical(chunk);
+        }
       }
-      this.lastRun = { at, users: users.length, inList: inList.size, subscribed: missing.length };
+      if (this.refused.size) {
+        this.log.warn(`${this.refused.size} account(s) not added: previously unsubscribed in Klaviyo`);
+      }
+      this.lastRun = { at, users: users.length, inList: inList.size, subscribed, refused: this.refused.size };
     } catch (err) {
       const message = (err as Error).message;
       this.log.error(`reconcile failed: ${message}`);
-      this.lastRun = { at, users: 0, inList: 0, subscribed: 0, error: message };
+      this.lastRun = { at, users: 0, inList: 0, subscribed: 0, refused: this.refused.size, error: message };
     } finally {
       this.reconciling = false;
     }
@@ -205,6 +234,31 @@ export class KlaviyoService implements OnModuleInit, OnModuleDestroy {
         },
       },
     });
+  }
+
+  /**
+   * A historical batch is all-or-nothing on Klaviyo's side: one profile it
+   * refuses (consent older than a recorded unsubscribe) fails the whole
+   * request, and the error names the offending index. Peel that profile
+   * off, remember why, and send the rest again. Returns how many went in.
+   */
+  private async subscribeHistorical(batch: AppUser[]): Promise<number> {
+    let pending = batch;
+    while (pending.length) {
+      try {
+        await this.subscribe(pending, { historical: true });
+        return pending.length;
+      } catch (err) {
+        const refusal = err instanceof KlaviyoError ? err.refusedIndex() : null;
+        if (refusal === null) throw err;
+        const { index, reason } = refusal;
+        const user = pending[index];
+        if (!user) throw err;
+        this.refused.set(normaliseEmail(user.email), reason);
+        pending = pending.filter((_, i) => i !== index);
+      }
+    }
+    return 0;
   }
 
   /**
@@ -266,10 +320,40 @@ export class KlaviyoService implements OnModuleInit, OnModuleDestroy {
     }
     if (!res.ok) {
       const text = await res.text().catch(() => '');
-      throw new Error(`${method} ${url} → ${res.status} ${text.slice(0, 300)}`);
+      throw new KlaviyoError(method, url, res.status, text);
     }
     if (res.status === 202 || res.status === 204) return {};
     return res.json();
+  }
+}
+
+/** A non-2xx from Klaviyo, keeping the body so callers can read the JSON:API errors. */
+export class KlaviyoError extends Error {
+  constructor(
+    method: string,
+    url: string,
+    readonly status: number,
+    readonly body: string,
+  ) {
+    super(`${method} ${url} → ${status} ${body.slice(0, 300)}`);
+  }
+
+  /**
+   * For a bulk job Klaviyo points at the profile it objects to:
+   * `/data/attributes/profiles/data/<index>/...`. Returns that index and the
+   * human reason, or null when the error is about something else.
+   */
+  refusedIndex(): { index: number; reason: string } | null {
+    if (this.status !== 400) return null;
+    try {
+      const parsed = JSON.parse(this.body) as { errors?: Array<{ detail?: string; source?: { pointer?: string } }> };
+      const first = parsed.errors?.[0];
+      const m = first?.source?.pointer?.match(/\/profiles\/data\/(\d+)\//);
+      if (!m) return null;
+      return { index: Number(m[1]), reason: first?.detail ?? 'refused' };
+    } catch {
+      return null;
+    }
   }
 }
 
