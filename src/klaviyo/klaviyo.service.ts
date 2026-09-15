@@ -179,9 +179,9 @@ export class KlaviyoService implements OnModuleInit, OnModuleDestroy {
           subscribed += await this.subscribeHistorical(chunk);
         }
       }
-      if (this.refused.size) {
-        this.log.warn(`${this.refused.size} account(s) not added: previously unsubscribed in Klaviyo`);
-      }
+      this.log.log(
+        `reconcile done: ${subscribed} subscribed, ${this.refused.size} not added (previously unsubscribed in Klaviyo), list now ~${inList.size + subscribed}`,
+      );
       this.lastRun = { at, users: users.length, inList: inList.size, subscribed, refused: this.refused.size };
     } catch (err) {
       const message = (err as Error).message;
