@@ -103,7 +103,7 @@ export class KlaviyoService implements OnModuleInit, OnModuleDestroy {
       await this.post('/profile-import/', {
         data: { type: 'profile', attributes: toProfileAttributes(user) },
       });
-      await this.subscribe([user]);
+      await this.subscribe([user], { historical: false });
       this.log.log(`synced ${email}`);
     } catch (err) {
       // The reconciler will pick this account up on its next pass.
@@ -151,7 +151,7 @@ export class KlaviyoService implements OnModuleInit, OnModuleDestroy {
 
       if (missing.length) {
         for (const chunk of chunks(missing, IMPORT_BATCH)) await this.bulkImport(chunk);
-        for (const chunk of chunks(missing, SUBSCRIBE_BATCH)) await this.subscribe(chunk);
+        for (const chunk of chunks(missing, SUBSCRIBE_BATCH)) await this.subscribe(chunk, { historical: true });
       }
       this.lastRun = { at, users: users.length, inList: inList.size, subscribed: missing.length };
     } catch (err) {
@@ -207,19 +207,30 @@ export class KlaviyoService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  private async subscribe(users: AppUser[]): Promise<void> {
+  /**
+   * Klaviyo draws a line between the two kinds of subscribe. A historical
+   * import MUST carry the past `consented_at` (the signup moment, when the
+   * Terms were accepted); a live subscribe MUST NOT carry one — consent is
+   * now. Sending a timestamp without the flag is a 400.
+   */
+  private async subscribe(users: AppUser[], { historical }: { historical: boolean }): Promise<void> {
     await this.post('/profile-subscription-bulk-create-jobs/', {
       data: {
         type: 'profile-subscription-bulk-create-job',
         attributes: {
           custom_source: 'Ask Andee app',
+          historical_import: historical,
           profiles: {
             data: users.map((u) => ({
               type: 'profile',
               attributes: {
                 email: normaliseEmail(u.email),
                 subscriptions: {
-                  email: { marketing: { consent: 'SUBSCRIBED', consented_at: consentedAt(u.created_at) } },
+                  email: {
+                    marketing: historical
+                      ? { consent: 'SUBSCRIBED', consented_at: consentedAt(u.created_at) }
+                      : { consent: 'SUBSCRIBED' },
+                  },
                 },
               },
             })),
