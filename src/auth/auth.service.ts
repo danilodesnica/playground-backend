@@ -11,6 +11,7 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import sgMail from '@sendgrid/mail';
 import { SUPABASE_ADMIN, SUPABASE_CLIENT } from '../supabase/supabase.module';
 import { ConfigService } from '@nestjs/config';
+import { KlaviyoService } from '../klaviyo/klaviyo.service';
 import { LoginDto } from './dto/login.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { SignupDto } from './dto/signup.dto';
@@ -31,6 +32,7 @@ export class AuthService {
     @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
     @Inject(SUPABASE_ADMIN) private readonly admin: SupabaseClient,
     private readonly config: ConfigService,
+    private readonly klaviyo: KlaviyoService,
   ) { }
 
   async login({ email, password }: LoginDto): Promise<{ authToken: string; refreshToken: string }> {
@@ -108,6 +110,18 @@ export class AuthService {
       } catch (err) {
         console.error('[auth.signup] failed to persist postcode', newUserId, err);
       }
+    }
+
+    // Marketing list. Not awaited: a Klaviyo hiccup must never slow or fail a
+    // signup, and the reconciler catches anything this misses.
+    if (newUserId) {
+      void this.klaviyo.syncUser({
+        id: newUserId,
+        email,
+        name,
+        code: postCode,
+        created_at: created.user?.created_at ?? new Date().toISOString(),
+      });
     }
 
     return {

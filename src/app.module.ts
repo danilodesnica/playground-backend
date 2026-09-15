@@ -7,6 +7,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
 import { InteractionsModule } from './interactions/interactions.module';
+import { KlaviyoModule } from './klaviyo/klaviyo.module';
 import { LocationsModule } from './locations/locations.module';
 import { OffersModule } from './offers/offers.module';
 import { ReviewsModule } from './reviews/reviews.module';
@@ -19,6 +20,7 @@ import { UserModule } from './user/user.module';
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     SupabaseModule,
+    KlaviyoModule,
     AnalyticsModule,
     AuthModule,
     InteractionsModule,

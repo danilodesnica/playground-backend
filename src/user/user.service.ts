@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { SupabaseClient, User } from '@supabase/supabase-js';
 import { SUPABASE_ADMIN } from '../supabase/supabase.module';
+import { KlaviyoService } from '../klaviyo/klaviyo.service';
 import type { UserProfile } from '../auth/auth.service';
 import { UpdateUserDto } from './dto/update-user.dto';
 
@@ -14,7 +15,10 @@ const PROFILE_COLUMNS = 'id, email, name, code, is_admin, created_at';
 
 @Injectable()
 export class UserService {
-  constructor(@Inject(SUPABASE_ADMIN) private readonly admin: SupabaseClient) {}
+  constructor(
+    @Inject(SUPABASE_ADMIN) private readonly admin: SupabaseClient,
+    private readonly klaviyo: KlaviyoService,
+  ) {}
 
   // is_admin lives in public.users (the source of truth). getUser().app_metadata
   // does NOT carry it, so authorize against the table — matching AdminAuthGuard.
@@ -102,6 +106,9 @@ export class UserService {
       throw new ForbiddenException("Cannot delete another user's profile");
     }
 
+    // The email has to be read before the row goes, so the marketing list can let go too.
+    const { data: leaving } = await this.admin.from('users').select('email').eq('id', targetId).maybeSingle();
+
     // Dependent records — none of these have ON DELETE CASCADE on user_id, so wipe explicitly.
     const cleanups = await Promise.all([
       this.admin.from('saved_location').delete().eq('user_id', targetId),
@@ -123,6 +130,8 @@ export class UserService {
       }
       throw new InternalServerErrorException(`Failed to delete user: ${error.message}`);
     }
+
+    if (leaving?.email) void this.klaviyo.removeUser(leaving.email);
 
     return { success: true };
   }
